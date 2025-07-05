@@ -1,0 +1,26 @@
+# Flutter/Dart/Pub related
+.dart_tool/
+.packages
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+build/
+*.lock
+
+# Android/iOS
+android/.gradle/
+ios/Pods/
+ios/.symlinks/
+macos/Pods/
+macos/.symlinks/
+*.xcworkspace
+*.xcuserstate
+
+# IDEs
+.idea/
+.vscode/
+*.iml
+
+# Secrets
+.env
