@@ -2,6 +2,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+
 import 'screens/main_screen.dart';
 import 'screens/create_account_screen.dart';
 import 'screens/create_account_form_screen.dart';
@@ -19,12 +20,16 @@ import 'screens/logout_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await dotenv.load(fileName: ".env"); // Load environment variables
+
+  print("⏳ Loading .env...");
+  await dotenv.load(fileName: ".env");
+  print("✅ .env loaded");
+
   runApp(const MyApp());
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({Key? key}) : super(key: key);
+  const MyApp({super.key});
 
   @override
   Widget build(BuildContext context) {
