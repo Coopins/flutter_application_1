@@ -1,8 +1,13 @@
+// lib/screens/fluency_assessment_screen.dart
+
 import 'package:flutter/material.dart';
 import '../services/openai_service.dart';
 
 class FluencyAssessmentScreen extends StatefulWidget {
-  const FluencyAssessmentScreen({Key? key}) : super(key: key);
+  final String selectedLanguage;
+
+  const FluencyAssessmentScreen({Key? key, required this.selectedLanguage})
+    : super(key: key);
 
   @override
   State<FluencyAssessmentScreen> createState() =>
@@ -10,53 +15,36 @@ class FluencyAssessmentScreen extends StatefulWidget {
 }
 
 class _FluencyAssessmentScreenState extends State<FluencyAssessmentScreen> {
-  late String selectedLanguage;
-  final OpenAIService _aiService = OpenAIService();
-
-  String? _lessonPlan;
+  final OpenAIService _openAIService = OpenAIService();
   bool _isLoading = false;
-  bool _hasInteractedWithAI = false;
 
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    final args = ModalRoute.of(context)?.settings.arguments;
-    if (args != null && args is String) {
-      selectedLanguage = args;
-    } else {
-      selectedLanguage = 'Spanish'; // fallback to prevent crashes
-    }
-  }
-
-  Future<void> _startFluencyAssessment() async {
+  Future<void> _assessFluencyAndGenerateLesson() async {
     setState(() {
       _isLoading = true;
-      _lessonPlan = null;
     });
 
     try {
-      final result = await _aiService.generateLessonPlan(
-        selectedLanguage: selectedLanguage,
-        performanceSummary:
-            "I'm a beginner but can understand a few basic phrases.",
+      final performanceSummary =
+          "The user was able to answer basic questions but struggled with complex grammar."; // Placeholder
+      final lessonPlan = await _openAIService.generateLessonPlan(
+        selectedLanguage: widget.selectedLanguage,
+        performanceSummary: performanceSummary,
       );
 
-      setState(() {
-        _lessonPlan = result;
-        _isLoading = false;
-        _hasInteractedWithAI = true;
-      });
+      Navigator.pushNamed(
+        context,
+        '/lessonPlan',
+        arguments: {'lessonPlan': lessonPlan},
+      );
     } catch (e) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text("Error: ${e.toString()}")));
+    } finally {
       setState(() {
-        _lessonPlan = 'Failed to generate lesson plan.\n$e';
         _isLoading = false;
-        _hasInteractedWithAI = false;
       });
     }
-  }
-
-  void _goHome() {
-    Navigator.pushNamed(context, '/home');
   }
 
   @override
@@ -64,57 +52,24 @@ class _FluencyAssessmentScreenState extends State<FluencyAssessmentScreen> {
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
+        title: const Text("Fluency Assessment"),
         backgroundColor: Colors.black,
-        title: const Text(
-          'Fluency Assessment',
-          style: TextStyle(color: Colors.white),
-        ),
-        elevation: 0,
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Text(
-              'Tap the mic to begin your short fluency assessment.',
-              style: TextStyle(fontSize: 18, color: Colors.white),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 40),
+      body: Center(
+        child:
             _isLoading
                 ? const CircularProgressIndicator()
-                : IconButton(
-                  icon: const Icon(Icons.mic, size: 60, color: Colors.white),
-                  onPressed: _startFluencyAssessment,
+                : Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.mic, size: 80, color: Colors.white),
+                    const SizedBox(height: 20),
+                    ElevatedButton(
+                      onPressed: _assessFluencyAndGenerateLesson,
+                      child: const Text("Continue"),
+                    ),
+                  ],
                 ),
-            const SizedBox(height: 30),
-            if (_lessonPlan != null && !_isLoading)
-              Column(
-                children: [
-                  const Text(
-                    'AI Lesson Plan Ready!',
-                    style: TextStyle(fontSize: 16, color: Colors.greenAccent),
-                  ),
-                  const SizedBox(height: 10),
-                  // Uncomment this to show the full lesson plan:
-                  // Text(_lessonPlan!, style: TextStyle(color: Colors.white)),
-                ],
-              ),
-            const SizedBox(height: 20),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.deepPurple,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 24,
-                  vertical: 12,
-                ),
-              ),
-              onPressed: _hasInteractedWithAI ? _goHome : null,
-              child: const Text('Continue'),
-            ),
-          ],
-        ),
       ),
     );
   }

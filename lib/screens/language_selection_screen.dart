@@ -15,63 +15,59 @@ class _LanguageSelectionScreenState extends State<LanguageSelectionScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.black,
       appBar: AppBar(
+        title: const Text('Select Language'),
         backgroundColor: Colors.black,
-        elevation: 0,
-        title: const Text(
-          'Select Language',
-          style: TextStyle(color: Colors.white),
-        ),
       ),
+      backgroundColor: Colors.black,
       body: Padding(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(24),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             DropdownButtonFormField<String>(
               value: _selected,
               decoration: InputDecoration(
-                filled: true,
-                fillColor: Colors.white,
                 labelText: 'Choose a language',
+                filled: true,
+                fillColor: Colors.black,
+                labelStyle: const TextStyle(color: Colors.white),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
                 ),
               ),
+              dropdownColor: Colors.black,
+              iconEnabledColor: Colors.white,
+              style: const TextStyle(color: Colors.white),
               items:
-                  _languages.map((String language) {
+                  _languages.map((language) {
                     return DropdownMenuItem<String>(
                       value: language,
                       child: Text(language),
                     );
                   }).toList(),
-              onChanged: (String? newValue) {
+              onChanged: (value) {
                 setState(() {
-                  _selected = newValue;
+                  _selected = value;
                 });
               },
             ),
-            const SizedBox(height: 40),
+            const SizedBox(height: 20),
             ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor:
-                    _selected != null ? Colors.deepPurple : Colors.grey,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 24,
-                  vertical: 12,
-                ),
-              ),
               onPressed:
                   _selected != null
                       ? () {
-                        Navigator.pushNamed(
-                          context,
-                          '/fluencyAssessment',
-                          arguments: _selected!,
-                        );
+                        Navigator.pushNamed(context, '/fluencyAssessment');
                       }
                       : null,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.white,
+                foregroundColor: Colors.black,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 32,
+                  vertical: 16,
+                ),
+              ),
               child: const Text('Continue'),
             ),
           ],

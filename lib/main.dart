@@ -38,13 +38,31 @@ class MyApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: ThemeData(primarySwatch: Colors.blue),
       home: const MainScreen(),
+      onGenerateRoute: (settings) {
+        if (settings.name == '/fluencyAssessment') {
+          final args = settings.arguments as Map<String, dynamic>;
+          return MaterialPageRoute(
+            builder:
+                (ctx) => FluencyAssessmentScreen(
+                  selectedLanguage: args['selectedLanguage'] ?? '',
+                ),
+          );
+        } else if (settings.name == '/lessonPlan') {
+          final args = settings.arguments as Map<String, dynamic>;
+          return MaterialPageRoute(
+            builder:
+                (ctx) => LessonPlanScreen(
+                  lessonPlan: args['lessonPlan'] ?? 'No lesson plan provided.',
+                ),
+          );
+        }
+        return null;
+      },
       routes: {
         '/createAccount': (ctx) => const CreateAccountScreen(),
         '/createForm': (ctx) => const CreateAccountFormScreen(),
         '/payment': (ctx) => const PaymentScreen(),
         '/languageSelect': (ctx) => const LanguageSelectionScreen(),
-        '/fluencyAssessment': (ctx) => const FluencyAssessmentScreen(),
-        '/lessonPlan': (ctx) => const LessonPlanScreen(),
         '/flashcards': (ctx) => const FlashcardsScreen(),
         '/vocabDrill': (ctx) => const VocabDrillScreen(),
         '/calendar': (ctx) => const CalendarScreen(),
