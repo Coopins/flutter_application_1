@@ -1,4 +1,7 @@
+// lib/screens/language_selection_screen.dart
+
 import 'package:flutter/material.dart';
+import 'fluency_assessment_screen.dart';
 
 class LanguageSelectionScreen extends StatefulWidget {
   const LanguageSelectionScreen({Key? key}) : super(key: key);
@@ -15,30 +18,32 @@ class _LanguageSelectionScreenState extends State<LanguageSelectionScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Select Language'),
-        backgroundColor: Colors.black,
-      ),
       backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        iconTheme: const IconThemeData(color: Colors.white),
+        title: const Text(
+          'Select Language',
+          style: TextStyle(color: Colors.white),
+        ),
+      ),
       body: Padding(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.all(20),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             DropdownButtonFormField<String>(
-              value: _selected,
               decoration: InputDecoration(
-                labelText: 'Choose a language',
                 filled: true,
-                fillColor: Colors.black,
-                labelStyle: const TextStyle(color: Colors.white),
+                fillColor: Colors.white,
+                labelText: 'Choose a language',
+                labelStyle: const TextStyle(color: Colors.black),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
                 ),
               ),
-              dropdownColor: Colors.black,
-              iconEnabledColor: Colors.white,
-              style: const TextStyle(color: Colors.white),
+              dropdownColor: Colors.white,
+              value: _selected,
               items:
                   _languages.map((language) {
                     return DropdownMenuItem<String>(
@@ -52,23 +57,30 @@ class _LanguageSelectionScreenState extends State<LanguageSelectionScreen> {
                 });
               },
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 30),
             ElevatedButton(
               onPressed:
-                  _selected != null
-                      ? () {
-                        Navigator.pushNamed(context, '/fluencyAssessment');
-                      }
-                      : null,
+                  _selected == null
+                      ? null
+                      : () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder:
+                                (context) => FluencyAssessmentScreen(
+                                  selectedLanguage: _selected!,
+                                ),
+                          ),
+                        );
+                      },
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.white,
                 foregroundColor: Colors.black,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 32,
-                  vertical: 16,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(30),
                 ),
               ),
-              child: const Text('Continue'),
+              child: const Text("Continue"),
             ),
           ],
         ),
