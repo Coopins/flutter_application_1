@@ -1,7 +1,4 @@
-// lib/screens/language_selection_screen.dart
-
 import 'package:flutter/material.dart';
-import 'fluency_assessment_screen.dart';
 
 class LanguageSelectionScreen extends StatefulWidget {
   const LanguageSelectionScreen({Key? key}) : super(key: key);
@@ -13,7 +10,17 @@ class LanguageSelectionScreen extends StatefulWidget {
 
 class _LanguageSelectionScreenState extends State<LanguageSelectionScreen> {
   final List<String> _languages = ['Spanish', 'French', 'German', 'Chinese'];
-  String? _selected;
+  String? _selectedLanguage;
+
+  void _goToFluencyAssessment() {
+    if (_selectedLanguage != null) {
+      Navigator.pushNamed(
+        context,
+        '/fluencyAssessment',
+        arguments: {'selectedLanguage': _selectedLanguage},
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -21,11 +28,8 @@ class _LanguageSelectionScreenState extends State<LanguageSelectionScreen> {
       backgroundColor: Colors.black,
       appBar: AppBar(
         backgroundColor: Colors.black,
-        iconTheme: const IconThemeData(color: Colors.white),
-        title: const Text(
-          'Select Language',
-          style: TextStyle(color: Colors.white),
-        ),
+        foregroundColor: Colors.white,
+        title: const Text('Select Language'),
       ),
       body: Padding(
         padding: const EdgeInsets.all(20),
@@ -33,51 +37,58 @@ class _LanguageSelectionScreenState extends State<LanguageSelectionScreen> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             DropdownButtonFormField<String>(
+              value: _selectedLanguage,
               decoration: InputDecoration(
                 filled: true,
-                fillColor: Colors.white,
-                labelText: 'Choose a language',
-                labelStyle: const TextStyle(color: Colors.black),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
+                fillColor: Colors.transparent,
+                enabledBorder: OutlineInputBorder(
+                  borderSide: const BorderSide(color: Colors.purpleAccent),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderSide: const BorderSide(
+                    color: Colors.purpleAccent,
+                    width: 2,
+                  ),
+                  borderRadius: BorderRadius.circular(12),
                 ),
               ),
-              dropdownColor: Colors.white,
-              value: _selected,
+              dropdownColor: Colors.black,
+              iconEnabledColor: Colors.white,
+              style: const TextStyle(color: Colors.white, fontSize: 18),
+              hint: const Text(
+                'Choose a language',
+                style: TextStyle(color: Colors.white70),
+              ),
               items:
                   _languages.map((language) {
                     return DropdownMenuItem<String>(
                       value: language,
-                      child: Text(language),
+                      child: Text(
+                        language,
+                        style: const TextStyle(color: Colors.white),
+                      ),
                     );
                   }).toList(),
               onChanged: (value) {
                 setState(() {
-                  _selected = value;
+                  _selectedLanguage = value;
                 });
               },
             ),
             const SizedBox(height: 30),
             ElevatedButton(
               onPressed:
-                  _selected == null
-                      ? null
-                      : () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder:
-                                (context) => FluencyAssessmentScreen(
-                                  selectedLanguage: _selected!,
-                                ),
-                          ),
-                        );
-                      },
+                  _selectedLanguage != null ? _goToFluencyAssessment : null,
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.white,
                 foregroundColor: Colors.black,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(30),
+                ),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 40,
+                  vertical: 15,
                 ),
               ),
               child: const Text("Continue"),

@@ -56,7 +56,7 @@ class MyApp extends StatelessWidget {
                 ),
           );
         }
-        return null;
+        return null; // fallback if no route matches
       },
       routes: {
         '/createAccount': (ctx) => const CreateAccountScreen(),
