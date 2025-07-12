@@ -2,6 +2,7 @@
 
 import 'package:flutter/material.dart';
 import '../services/openai_service.dart';
+import '../services/lesson_plan_storage.dart';
 
 class FluencyAssessmentScreen extends StatefulWidget {
   final String selectedLanguage;
@@ -26,24 +27,17 @@ class _FluencyAssessmentScreenState extends State<FluencyAssessmentScreen> {
 
     try {
       final performanceSummary = _responseController.text.trim();
-      if (performanceSummary.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Please enter a short response.")),
-        );
-        setState(() => _isLoading = false);
-        return;
-      }
 
       final lessonPlan = await _openAIService.generateLessonPlan(
         selectedLanguage: widget.selectedLanguage,
         performanceSummary: performanceSummary,
       );
 
-      Navigator.pushNamed(
-        context,
-        '/lessonPlan',
-        arguments: {'lessonPlan': lessonPlan},
-      );
+      // Save the lesson plan for later use
+      LessonPlanStorage.saveLessonPlan(lessonPlan);
+
+      // Navigate to lesson plan screen
+      Navigator.pushNamed(context, '/lessonPlan');
     } catch (e) {
       ScaffoldMessenger.of(
         context,
@@ -68,14 +62,6 @@ class _FluencyAssessmentScreenState extends State<FluencyAssessmentScreen> {
         padding: const EdgeInsets.all(20),
         child: Column(
           children: [
-            Text(
-              'Language selected: ${widget.selectedLanguage}',
-              style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 10),
             const Text(
               'Describe your language skills briefly below:',
               style: TextStyle(color: Colors.white),
@@ -94,13 +80,9 @@ class _FluencyAssessmentScreenState extends State<FluencyAssessmentScreen> {
             const SizedBox(height: 20),
             ElevatedButton(
               onPressed: _isLoading ? null : _assessFluencyAndGenerateLesson,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.white,
-                foregroundColor: Colors.black,
-              ),
               child:
                   _isLoading
-                      ? const CircularProgressIndicator(color: Colors.black)
+                      ? const CircularProgressIndicator(color: Colors.white)
                       : const Text("Continue"),
             ),
           ],
