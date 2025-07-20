@@ -48,7 +48,11 @@ class MyApp extends StatelessWidget {
                 ),
           );
         } else if (settings.name == '/lessonPlan') {
-          return MaterialPageRoute(builder: (ctx) => const LessonPlanScreen());
+          final args = settings.arguments as Map<String, dynamic>;
+          return MaterialPageRoute(
+            builder:
+                (ctx) => LessonPlanScreen(lessonPlan: args['lessonPlan'] ?? ''),
+          );
         }
         return null;
       },

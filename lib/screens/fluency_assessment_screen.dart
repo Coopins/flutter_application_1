@@ -1,5 +1,11 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:record/record.dart';
+import 'package:http/http.dart' as http;
+import 'package:path_provider/path_provider.dart';
+import 'package:path/path.dart' as path;
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class FluencyAssessmentScreen extends StatefulWidget {
   final String selectedLanguage;
@@ -13,59 +19,114 @@ class FluencyAssessmentScreen extends StatefulWidget {
 }
 
 class _FluencyAssessmentScreenState extends State<FluencyAssessmentScreen> {
+  final AudioRecorder _recorder = AudioRecorder();
   bool _isListening = false;
-  String _transcript = '';
   String _lessonPlan = '';
 
   @override
   void initState() {
     super.initState();
-    _requestMicPermissionAndStart();
+    _startAssessmentFlow();
   }
 
-  Future<void> _requestMicPermissionAndStart() async {
-    final status = await Permission.microphone.request();
-
-    if (status.isGranted) {
-      _startListening();
-    } else {
-      setState(() {
-        _transcript = "Microphone permission denied.";
-      });
+  Future<void> _startAssessmentFlow() async {
+    final permission = await Permission.microphone.request();
+    if (!permission.isGranted) {
+      setState(() => _lessonPlan = "Microphone permission denied.");
+      return;
     }
-  }
 
-  Future<void> _startListening() async {
-    setState(() {
-      _isListening = true;
-    });
+    setState(() => _isListening = true);
 
-    // Simulated delay for transcription
-    await Future.delayed(const Duration(seconds: 3));
+    final dir = await getTemporaryDirectory();
+    final filePath = path.join(dir.path, 'input.wav');
 
-    String mockTranscript =
-        "I'm a beginner learning ${widget.selectedLanguage}.";
+    await _recorder.start(
+      const RecordConfig(encoder: AudioEncoder.wav, sampleRate: 16000),
+      path: filePath,
+    );
+
+    await Future.delayed(const Duration(seconds: 5));
+
+    final recordedPath = await _recorder.stop();
+
+    if (recordedPath == null || !File(recordedPath).existsSync()) {
+      setState(() {
+        _isListening = false;
+        _lessonPlan = 'Recording failed.';
+      });
+      return;
+    }
+
+    final transcript = await _transcribeAudio(File(recordedPath));
+    final plan = await _generateLessonPlan(transcript);
 
     setState(() {
       _isListening = false;
-      _transcript = mockTranscript;
+      _lessonPlan = plan ?? 'No lesson plan returned.';
     });
 
-    _generateLessonPlan(mockTranscript);
+    // OPTIONAL: navigate to lesson plan screen and pass _lessonPlan
+    Navigator.pushNamed(
+      context,
+      '/lessonPlan',
+      arguments: {'lessonPlan': _lessonPlan},
+    );
   }
 
-  Future<void> _generateLessonPlan(String input) async {
-    // Simulated delay for GPT generation
-    await Future.delayed(const Duration(seconds: 2));
+  Future<String> _transcribeAudio(File file) async {
+    final request =
+        http.MultipartRequest(
+            'POST',
+            Uri.parse('https://api.openai.com/v1/audio/transcriptions'),
+          )
+          ..headers['Authorization'] = 'Bearer ${dotenv.env['OPENAI_API_KEY']}'
+          ..fields['model'] = 'whisper-1'
+          ..files.add(await http.MultipartFile.fromPath('file', file.path));
 
-    setState(() {
-      _lessonPlan =
-          "Lesson Plan for ${widget.selectedLanguage}:\n"
-          "1. Basic Greetings\n"
-          "2. Common Phrases\n"
-          "3. Numbers 1-10\n"
-          "4. Simple Questions";
-    });
+    final response = await request.send();
+
+    if (response.statusCode != 200) return 'Transcription failed';
+
+    final res = await http.Response.fromStream(response);
+    return res.body.contains('"text":"')
+        ? res.body.split('"text":"')[1].split('"')[0]
+        : 'No text found.';
+  }
+
+  Future<String?> _generateLessonPlan(String transcript) async {
+    final response = await http.post(
+      Uri.parse('https://api.openai.com/v1/chat/completions'),
+      headers: {
+        'Authorization': 'Bearer ${dotenv.env['OPENAI_API_KEY']}',
+        'Content-Type': 'application/json',
+      },
+      body: '''
+      {
+        "model": "gpt-4o",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are a language tutor. Create a beginner-friendly lesson plan based on the user's spoken input and target language: ${widget.selectedLanguage}."
+          },
+          {
+            "role": "user",
+            "content": "$transcript"
+          }
+        ]
+      }
+      ''',
+    );
+
+    if (response.statusCode != 200) return 'GPT failed';
+
+    final raw = response.body;
+    final match = RegExp(
+      r'"content":"(.*?)"}]}$',
+      dotAll: true,
+    ).firstMatch(raw);
+    return match?.group(1)?.replaceAll(r'\n', '\n') ??
+        'Invalid response format';
   }
 
   Widget _buildListeningView() {
@@ -84,9 +145,9 @@ class _FluencyAssessmentScreenState extends State<FluencyAssessmentScreen> {
 
   Widget _buildResultView() {
     return Padding(
-      padding: const EdgeInsets.all(20.0),
+      padding: const EdgeInsets.all(20),
       child: Text(
-        _lessonPlan.isNotEmpty ? _lessonPlan : "Transcript: $_transcript",
+        _lessonPlan,
         style: const TextStyle(fontSize: 16, color: Colors.white),
       ),
     );

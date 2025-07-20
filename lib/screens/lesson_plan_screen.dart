@@ -2,15 +2,15 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
-import '../services/lesson_plan_storage.dart';
 
 class LessonPlanScreen extends StatelessWidget {
-  const LessonPlanScreen({Key? key}) : super(key: key);
+  final String lessonPlan;
+
+  const LessonPlanScreen({Key? key, required this.lessonPlan})
+    : super(key: key);
 
   @override
   Widget build(BuildContext context) {
-    final lessonPlan = LessonPlanStorage.getLessonPlan();
-
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
