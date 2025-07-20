@@ -56,7 +56,7 @@ class _FluencyAssessmentScreenState extends State<FluencyAssessmentScreen> {
       path: filePath,
     );
 
-    await Future.delayed(const Duration(seconds: 5));
+    await Future.delayed(const Duration(seconds: 60));
 
     final recordedPath = await _recorder.stop();
 
@@ -124,7 +124,7 @@ class _FluencyAssessmentScreenState extends State<FluencyAssessmentScreen> {
             {
               "role": "system",
               "content":
-                  "You are a language tutor. Create a beginner-friendly lesson plan based on the user's spoken input and target language: ${widget.selectedLanguage}.",
+                  "You are a language tutor. Assess the user's fluency level based on their spoken input in the target language: ${widget.selectedLanguage}. Then generate a personalized lesson plan that matches their level and helps them improve. The plan should include vocabulary, phrases, and examples in the target language to help the user begin practicing immediately.",
             },
             {"role": "user", "content": transcript},
           ],
