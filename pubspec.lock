@@ -393,15 +393,15 @@ packages:
     source: hosted
     version: "1.2.2"
   record_linux:
-    dependency: transitive
+    dependency: "direct overridden"
     description:
       name: record_linux
-      sha256: "74d41a9ebb1eb498a38e9a813dd524e8f0b4fdd627270bda9756f437b110a3e3"
+      sha256: "0626678a092c75ce6af1e32fe7fd1dea709b92d308bc8e3b6d6348e2430beb95"
       url: "https://pub.dev"
     source: hosted
-    version: "0.7.2"
+    version: "1.1.1"
   record_platform_interface:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: record_platform_interface
       sha256: c1ad38f51e4af88a085b3e792a22c685cb3e7c23fc37aa7ce44c4cf18f25fe89
@@ -441,10 +441,10 @@ packages:
     dependency: "direct main"
     description:
       name: speech_to_text
-      sha256: "130fde359c23a4da6c2a4f032eab43e4c2b57c9818fe93694c091dfbdca6ae70"
+      sha256: bae858a6b838489e46428f1b5ba66ce65116eb5d22c00c360b9b262df98595b8
       url: "https://pub.dev"
     source: hosted
-    version: "7.1.0"
+    version: "7.2.0"
   speech_to_text_platform_interface:
     dependency: transitive
     description:
