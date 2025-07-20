@@ -40,7 +40,7 @@ class MyApp extends StatelessWidget {
       home: const MainScreen(),
       onGenerateRoute: (settings) {
         if (settings.name == '/fluencyAssessment') {
-          final args = settings.arguments as Map<String, dynamic>;
+          final args = settings.arguments as Map<String, dynamic>? ?? {};
           return MaterialPageRoute(
             builder:
                 (ctx) => FluencyAssessmentScreen(
@@ -48,10 +48,12 @@ class MyApp extends StatelessWidget {
                 ),
           );
         } else if (settings.name == '/lessonPlan') {
-          final args = settings.arguments as Map<String, dynamic>;
+          final args = settings.arguments as Map<String, dynamic>? ?? {};
           return MaterialPageRoute(
             builder:
-                (ctx) => LessonPlanScreen(lessonPlan: args['lessonPlan'] ?? ''),
+                (ctx) => LessonPlanScreen(
+                  lessonPlan: args['lessonPlan'] ?? 'No lesson plan provided.',
+                ),
           );
         }
         return null;
