@@ -1,12 +1,13 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'package:record/record.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import '../services/tts_service.dart';
 
 class FluencyAssessmentScreen extends StatefulWidget {
   final String selectedLanguage;
@@ -24,52 +25,103 @@ class _FluencyAssessmentScreenState extends State<FluencyAssessmentScreen> {
   bool _isListening = false;
   String _lessonPlan = '';
   bool _showRetry = false;
+  Timer? _silenceTimer;
+  StreamSubscription<Amplitude>? _amplitudeSub;
+  bool _hasStartedRecording = false;
+  String? _recordedFilePath;
+
+  final Map<String, Map<String, String>> _languagePrompts = {
+    'Spanish': {
+      'question': '¿Puedes hablarme un poco sobre ti?',
+      'langCode': 'es-ES',
+    },
+    'French': {
+      'question': 'Peux-tu me parler un peu de toi ?',
+      'langCode': 'fr-FR',
+    },
+    'German': {
+      'question': 'Kannst du mir ein bisschen über dich erzählen?',
+      'langCode': 'de-DE',
+    },
+    'Chinese': {'question': '你可以介绍一下你自己吗？', 'langCode': 'zh-CN'},
+  };
 
   @override
   void initState() {
     super.initState();
-    _startAssessmentFlow();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _startIntroAndAssessment();
+    });
   }
 
-  Future<void> _startAssessmentFlow() async {
+  Future<void> _startIntroAndAssessment() async {
     setState(() {
       _isListening = true;
       _lessonPlan = '';
       _showRetry = false;
     });
 
-    final permission = await Permission.microphone.request();
-    if (!permission.isGranted) {
-      setState(() {
-        _lessonPlan = "Microphone permission denied.";
-        _isListening = false;
-        _showRetry = true;
-      });
-      return;
+    final lang = widget.selectedLanguage;
+    final intro =
+        "Great. We're going to assess your fluency in $lang. I’ll ask you a quick question in that language. Just answer naturally, and I’ll take care of the rest.";
+    await TTSService.speak(intro, lang: 'en-US');
+
+    final prompt = _languagePrompts[lang];
+    if (prompt != null) {
+      await TTSService.speak(prompt['question']!, lang: prompt['langCode']!);
     }
 
+    await _startListeningWithSilenceDetection();
+  }
+
+  Future<void> _startListeningWithSilenceDetection() async {
     final dir = await getTemporaryDirectory();
-    final filePath = path.join(dir.path, 'input.wav');
+    final filePath = path.join(
+      dir.path,
+      'response_${DateTime.now().millisecondsSinceEpoch}.wav',
+    );
+
+    _recordedFilePath = filePath;
 
     await _recorder.start(
       const RecordConfig(encoder: AudioEncoder.wav, sampleRate: 16000),
       path: filePath,
     );
 
-    await Future.delayed(const Duration(seconds: 60));
+    _hasStartedRecording = true;
 
+    _amplitudeSub = _recorder
+        .onAmplitudeChanged(const Duration(milliseconds: 300))
+        .listen((amp) async {
+          if (amp.current > -45) {
+            _silenceTimer?.cancel();
+            _silenceTimer = Timer(const Duration(seconds: 2), () async {
+              await _stopRecording();
+            });
+          }
+        });
+  }
+
+  Future<void> _stopRecording() async {
+    if (!_hasStartedRecording) return;
+
+    _hasStartedRecording = false;
     final recordedPath = await _recorder.stop();
+    _amplitudeSub?.cancel();
 
-    if (recordedPath == null || !File(recordedPath).existsSync()) {
+    if (recordedPath != null) {
+      await _processRecording(File(recordedPath));
+    } else {
       setState(() {
         _isListening = false;
         _lessonPlan = 'Recording failed.';
         _showRetry = true;
       });
-      return;
     }
+  }
 
-    final transcript = await _transcribeAudio(File(recordedPath));
+  Future<void> _processRecording(File file) async {
+    final transcript = await _transcribeAudio(file);
     final plan = await _generateLessonPlan(transcript);
 
     setState(() {
@@ -77,6 +129,10 @@ class _FluencyAssessmentScreenState extends State<FluencyAssessmentScreen> {
       _lessonPlan = plan ?? 'No lesson plan returned.';
       _showRetry = plan == null || plan.contains('Invalid');
     });
+
+    if (plan != null && !plan.contains('Invalid')) {
+      await TTSService.speak(plan, lang: 'en-US');
+    }
 
     Navigator.pushNamed(
       context,
@@ -147,10 +203,13 @@ class _FluencyAssessmentScreenState extends State<FluencyAssessmentScreen> {
   Widget _buildListeningView() {
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
-      children: const [
-        Icon(Icons.mic, size: 80, color: Colors.green),
-        SizedBox(height: 20),
-        Text(
+      children: [
+        IconButton(
+          icon: const Icon(Icons.mic, size: 80, color: Colors.green),
+          onPressed: _stopRecording,
+        ),
+        const SizedBox(height: 20),
+        const Text(
           "Gabi is listening...",
           style: TextStyle(fontSize: 18, color: Colors.white),
         ),
@@ -171,7 +230,7 @@ class _FluencyAssessmentScreenState extends State<FluencyAssessmentScreen> {
           if (_showRetry) ...[
             const SizedBox(height: 20),
             ElevatedButton(
-              onPressed: _startAssessmentFlow,
+              onPressed: _startIntroAndAssessment,
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.deepPurple[200],
               ),
@@ -194,5 +253,12 @@ class _FluencyAssessmentScreenState extends State<FluencyAssessmentScreen> {
         child: _isListening ? _buildListeningView() : _buildResultView(),
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    _amplitudeSub?.cancel();
+    _silenceTimer?.cancel();
+    super.dispose();
   }
 }
