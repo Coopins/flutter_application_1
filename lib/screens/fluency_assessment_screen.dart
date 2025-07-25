@@ -28,7 +28,7 @@ class _FluencyAssessmentScreenState extends State<FluencyAssessmentScreen> {
   Timer? _silenceTimer;
   StreamSubscription<Amplitude>? _amplitudeSub;
   bool _hasStartedRecording = false;
-  String? _recordedFilePath;
+  bool _hasNavigated = false; // Prevents multiple pushes
 
   final Map<String, Map<String, String>> _languagePrompts = {
     'Spanish': {
@@ -59,15 +59,21 @@ class _FluencyAssessmentScreenState extends State<FluencyAssessmentScreen> {
       _isListening = true;
       _lessonPlan = '';
       _showRetry = false;
+      _hasNavigated = false;
     });
 
     final lang = widget.selectedLanguage;
-    final intro =
-        "Great. We're going to assess your fluency in $lang. I’ll ask you a quick question in that language. Just answer naturally, and I’ll take care of the rest.";
-    await TTSService.speak(intro, lang: 'en-US');
-
     final prompt = _languagePrompts[lang];
+
     if (prompt != null) {
+      final intro =
+          "We’re going to assess your fluency in $lang. Please answer the next question in $lang.";
+
+      await TTSService.stop();
+      await TTSService.setDefaults();
+      await TTSService.flutterTts.awaitSpeakCompletion(true); // 🔊 Sync audio
+
+      await TTSService.speak(intro, lang: 'en-US');
       await TTSService.speak(prompt['question']!, lang: prompt['langCode']!);
     }
 
@@ -80,8 +86,6 @@ class _FluencyAssessmentScreenState extends State<FluencyAssessmentScreen> {
       dir.path,
       'response_${DateTime.now().millisecondsSinceEpoch}.wav',
     );
-
-    _recordedFilePath = filePath;
 
     await _recorder.start(
       const RecordConfig(encoder: AudioEncoder.wav, sampleRate: 16000),
@@ -96,28 +100,23 @@ class _FluencyAssessmentScreenState extends State<FluencyAssessmentScreen> {
           if (amp.current > -45) {
             _silenceTimer?.cancel();
             _silenceTimer = Timer(const Duration(seconds: 2), () async {
-              await _stopRecording();
+              if (!_hasStartedRecording) return;
+
+              _hasStartedRecording = false;
+              final recordedPath = await _recorder.stop();
+              _amplitudeSub?.cancel();
+              if (recordedPath != null) {
+                await _processRecording(File(recordedPath));
+              } else {
+                setState(() {
+                  _isListening = false;
+                  _lessonPlan = 'Recording failed.';
+                  _showRetry = true;
+                });
+              }
             });
           }
         });
-  }
-
-  Future<void> _stopRecording() async {
-    if (!_hasStartedRecording) return;
-
-    _hasStartedRecording = false;
-    final recordedPath = await _recorder.stop();
-    _amplitudeSub?.cancel();
-
-    if (recordedPath != null) {
-      await _processRecording(File(recordedPath));
-    } else {
-      setState(() {
-        _isListening = false;
-        _lessonPlan = 'Recording failed.';
-        _showRetry = true;
-      });
-    }
   }
 
   Future<void> _processRecording(File file) async {
@@ -131,14 +130,18 @@ class _FluencyAssessmentScreenState extends State<FluencyAssessmentScreen> {
     });
 
     if (plan != null && !plan.contains('Invalid')) {
-      await TTSService.speak(plan, lang: 'en-US');
+      final plainTextPlan = plan.replaceAll(RegExp(r'[\#\*\_\`]'), '');
+      await TTSService.speak(plainTextPlan, lang: 'en-US');
     }
 
-    Navigator.pushNamed(
-      context,
-      '/lessonPlan',
-      arguments: {'lessonPlan': _lessonPlan},
-    );
+    if (!_hasNavigated && mounted) {
+      _hasNavigated = true;
+      Navigator.pushNamed(
+        context,
+        '/lessonPlan',
+        arguments: {'lessonPlan': _lessonPlan},
+      );
+    }
   }
 
   Future<String> _transcribeAudio(File file) async {
@@ -204,45 +207,68 @@ class _FluencyAssessmentScreenState extends State<FluencyAssessmentScreen> {
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        IconButton(
-          icon: const Icon(Icons.mic, size: 80, color: Colors.green),
-          onPressed: _stopRecording,
-        ),
-        const SizedBox(height: 20),
-        const Text(
-          "Gabi is listening...",
-          style: TextStyle(fontSize: 18, color: Colors.white),
+        GestureDetector(
+          onTap: () async {
+            if (_hasStartedRecording) {
+              _hasStartedRecording = false;
+              final recordedPath = await _recorder.stop();
+              _amplitudeSub?.cancel();
+              if (recordedPath != null) {
+                await _processRecording(File(recordedPath));
+              }
+            }
+          },
+          child: const Column(
+            children: [
+              Icon(Icons.mic, size: 80, color: Colors.green),
+              SizedBox(height: 20),
+              Text(
+                "Gabi is listening...",
+                style: TextStyle(fontSize: 18, color: Colors.white),
+              ),
+            ],
+          ),
         ),
       ],
     );
   }
 
   Widget _buildResultView() {
-    return Padding(
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(
-            _lessonPlan,
-            style: const TextStyle(fontSize: 16, color: Colors.white),
-          ),
-          if (_showRetry) ...[
-            const SizedBox(height: 20),
-            ElevatedButton(
-              onPressed: _startIntroAndAssessment,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.deepPurple[200],
-              ),
-              child: const Text(
-                "Try Again",
-                style: TextStyle(color: Colors.black),
-              ),
+    return SafeArea(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(20, 30, 20, 20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              _lessonPlan,
+              style: const TextStyle(fontSize: 16, color: Colors.white),
             ),
+            if (_showRetry) ...[
+              const SizedBox(height: 20),
+              ElevatedButton(
+                onPressed: _startIntroAndAssessment,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.deepPurple[200],
+                ),
+                child: const Text(
+                  "Try Again",
+                  style: TextStyle(color: Colors.black),
+                ),
+              ),
+            ],
           ],
-        ],
+        ),
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    _amplitudeSub?.cancel();
+    _silenceTimer?.cancel();
+    TTSService.stop();
+    super.dispose();
   }
 
   @override
@@ -253,12 +279,5 @@ class _FluencyAssessmentScreenState extends State<FluencyAssessmentScreen> {
         child: _isListening ? _buildListeningView() : _buildResultView(),
       ),
     );
-  }
-
-  @override
-  void dispose() {
-    _amplitudeSub?.cancel();
-    _silenceTimer?.cancel();
-    super.dispose();
   }
 }

@@ -1,20 +1,37 @@
 import 'package:flutter_tts/flutter_tts.dart';
 
 class TTSService {
-  static final FlutterTts _tts = FlutterTts();
+  static final FlutterTts flutterTts = FlutterTts();
 
-  static Future<void> speak(String text, {String lang = 'en-US'}) async {
-    await _tts.setLanguage(lang);
-    await _tts.setSpeechRate(0.5);
-    await _tts.setPitch(1.0);
-    await _tts.setVolume(1.0);
-    await _tts.awaitSpeakCompletion(
-      true,
-    ); // Ensures the app waits until speaking finishes
-    await _tts.speak(text);
+  /// Configure base settings for clarity and voice consistency
+  static Future<void> setDefaults() async {
+    await flutterTts.setLanguage('en-US');
+    await flutterTts.setSpeechRate(0.45); // Slightly slower for clarity
+    await flutterTts.setPitch(1.0);
+    await flutterTts.setVolume(1.0);
+    await flutterTts.awaitSpeakCompletion(true); // 🔊 Ensures sequential speech
+
+    // Optional: Enforce Google TTS on Android for better quality
+    await flutterTts.setEngine("com.google.android.tts");
   }
 
+  /// Speak a phrase in the specified language
+  static Future<void> speak(String text, {String lang = 'en-US'}) async {
+    try {
+      await stop(); // Always stop any ongoing speech first
+      await flutterTts.setLanguage(lang);
+      await flutterTts.speak(text);
+    } catch (e) {
+      print("❌ TTS error while speaking: $e");
+    }
+  }
+
+  /// Stop current speech
   static Future<void> stop() async {
-    await _tts.stop();
+    try {
+      await flutterTts.stop();
+    } catch (e) {
+      print("⚠️ Error stopping TTS: $e");
+    }
   }
 }
