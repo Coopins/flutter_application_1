@@ -13,7 +13,7 @@ class _MainScreenState extends State<MainScreen>
     with SingleTickerProviderStateMixin {
   late final AnimationController _ctrl;
 
-  final List<_FloatingWord> _words = [
+  final List<_FloatingWord> _words = const [
     _FloatingWord('学ぶ', 0.15),
     _FloatingWord('parler', 0.25),
     _FloatingWord('hablar', 0.35),
@@ -107,11 +107,12 @@ class _MainScreenState extends State<MainScreen>
               padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 20),
               child: Column(
                 children: [
+                  // Create account → go to the form screen
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton(
                       onPressed:
-                          () => Navigator.pushNamed(context, '/createAccount'),
+                          () => Navigator.pushNamed(context, '/createForm'),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.white,
                         foregroundColor: Colors.black,
@@ -130,12 +131,12 @@ class _MainScreenState extends State<MainScreen>
                     ),
                   ),
                   const SizedBox(height: 12),
+
+                  // Log In → open real sign-in screen
                   SizedBox(
                     width: 150,
                     child: ElevatedButton(
-                      onPressed:
-                          () =>
-                              Navigator.pushNamed(context, '/home'), // updated
+                      onPressed: () => Navigator.pushNamed(context, '/signin'),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.white,
                         foregroundColor: Colors.black,
@@ -166,5 +167,5 @@ class _MainScreenState extends State<MainScreen>
 class _FloatingWord {
   final String text;
   final double vertical;
-  _FloatingWord(this.text, this.vertical);
+  const _FloatingWord(this.text, this.vertical);
 }

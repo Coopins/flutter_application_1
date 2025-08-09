@@ -42,22 +42,57 @@ class _LessonPlanScreenState extends State<LessonPlanScreen> {
     return Scaffold(
       backgroundColor: Colors.black,
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(20),
-          child: MarkdownBody(
-            data: widget.lessonPlan,
-            styleSheet: MarkdownStyleSheet.fromTheme(
-              Theme.of(context),
-            ).copyWith(
-              p: const TextStyle(color: Colors.white, fontSize: 16),
-              h1: const TextStyle(color: Colors.white),
-              h2: const TextStyle(color: Colors.white),
-              h3: const TextStyle(color: Colors.white),
-              listBullet: const TextStyle(color: Colors.white),
-              blockquote: const TextStyle(color: Colors.white70),
-              strong: const TextStyle(color: Colors.white),
+        child: Column(
+          children: [
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(20),
+                child: MarkdownBody(
+                  data: widget.lessonPlan,
+                  styleSheet: MarkdownStyleSheet.fromTheme(
+                    Theme.of(context),
+                  ).copyWith(
+                    p: const TextStyle(color: Colors.white, fontSize: 16),
+                    h1: const TextStyle(color: Colors.white),
+                    h2: const TextStyle(color: Colors.white),
+                    h3: const TextStyle(color: Colors.white),
+                    listBullet: const TextStyle(color: Colors.white),
+                    blockquote: const TextStyle(color: Colors.white70),
+                    strong: const TextStyle(color: Colors.white),
+                  ),
+                ),
+              ),
             ),
-          ),
+            Padding(
+              padding: const EdgeInsets.symmetric(
+                vertical: 20.0,
+                horizontal: 40.0,
+              ),
+              child: SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  icon: const Icon(Icons.home, color: Colors.white),
+                  label: const Text(
+                    'Go to Home',
+                    style: TextStyle(fontSize: 18, color: Colors.white),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.deepPurple,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  onPressed: () {
+                    // Use your actual Home route name here (e.g., '/home')
+                    Navigator.of(
+                      context,
+                    ).pushNamedAndRemoveUntil('/home', (route) => false);
+                  },
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );

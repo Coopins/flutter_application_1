@@ -86,6 +86,48 @@ class HomeScreen extends StatelessWidget {
               ],
             ),
 
+            // New row: Active Lessons (centered)
+            const SizedBox(height: 40),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Flexible(
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap:
+                          () => Navigator.pushNamed(context, '/activeLessons'),
+                      borderRadius: BorderRadius.circular(8),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 16,
+                          horizontal: 40,
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: const [
+                            Icon(
+                              Icons.play_circle_fill,
+                              size: 54,
+                              color: Colors.white,
+                            ),
+                            SizedBox(height: 8),
+                            Text(
+                              'Active Lessons',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 18,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+
             const Spacer(),
 
             // Bottom navigation bar (static except home & settings)
