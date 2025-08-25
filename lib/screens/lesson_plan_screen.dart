@@ -6,7 +6,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 class LessonPlanScreen extends StatefulWidget {
-  const LessonPlanScreen({Key? key}) : super(key: key);
+  const LessonPlanScreen({super.key});
 
   @override
   State<LessonPlanScreen> createState() => _LessonPlanScreenState();

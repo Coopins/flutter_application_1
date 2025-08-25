@@ -4,7 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class CreateAccountFormScreen extends StatefulWidget {
-  const CreateAccountFormScreen({Key? key}) : super(key: key);
+  const CreateAccountFormScreen({super.key});
 
   @override
   State<CreateAccountFormScreen> createState() =>

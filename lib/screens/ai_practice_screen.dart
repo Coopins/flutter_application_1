@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 class AIPracticeScreen extends StatelessWidget {
-  const AIPracticeScreen({Key? key}) : super(key: key);
+  const AIPracticeScreen({super.key});
 
   Widget _colorButton(Color color, String label) {
     return Padding(

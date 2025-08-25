@@ -11,8 +11,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 class FluencyAssessmentScreen extends StatefulWidget {
   final String selectedLanguage;
 
-  const FluencyAssessmentScreen({Key? key, required this.selectedLanguage})
-    : super(key: key);
+  const FluencyAssessmentScreen({super.key, required this.selectedLanguage});
 
   @override
   State<FluencyAssessmentScreen> createState() =>

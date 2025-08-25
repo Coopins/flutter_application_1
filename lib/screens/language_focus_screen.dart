@@ -3,7 +3,7 @@
 import 'package:flutter/material.dart';
 
 class LanguageFocusScreen extends StatelessWidget {
-  const LanguageFocusScreen({Key? key}) : super(key: key);
+  const LanguageFocusScreen({super.key});
 
   Widget _focusCard(String title, List<String> bullets) {
     return Container(

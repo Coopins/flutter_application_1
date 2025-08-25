@@ -3,7 +3,7 @@
 import 'package:flutter/material.dart';
 
 class VocabDrillScreen extends StatelessWidget {
-  const VocabDrillScreen({Key? key}) : super(key: key);
+  const VocabDrillScreen({super.key});
 
   Widget _card(String title, List<String> bullets) {
     return Container(

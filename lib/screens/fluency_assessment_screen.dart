@@ -10,8 +10,7 @@ import '../services/lesson_plan_storage.dart';
 
 class FluencyAssessmentScreen extends StatefulWidget {
   final String? selectedLanguage;
-  const FluencyAssessmentScreen({Key? key, this.selectedLanguage})
-    : super(key: key);
+  const FluencyAssessmentScreen({super.key, this.selectedLanguage});
 
   @override
   State<FluencyAssessmentScreen> createState() =>

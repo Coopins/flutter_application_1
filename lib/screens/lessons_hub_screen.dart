@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import '../services/firestore_service.dart';
 
 class LessonsHubScreen extends StatelessWidget {
-  const LessonsHubScreen({Key? key}) : super(key: key);
+  const LessonsHubScreen({super.key});
 
   int _firstIncompleteIndex(Map<String, dynamic> plan, Set<int> completed) {
     final sections = (plan['sections'] as List?) ?? const [];
@@ -128,8 +128,7 @@ class LessonsHubScreen extends StatelessWidget {
 class _ProgressChip extends StatelessWidget {
   final int done;
   final int total;
-  const _ProgressChip({Key? key, required this.done, required this.total})
-    : super(key: key);
+  const _ProgressChip({super.key, required this.done, required this.total});
 
   @override
   Widget build(BuildContext context) {

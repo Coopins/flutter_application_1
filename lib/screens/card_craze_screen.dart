@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 class CardCrazeScreen extends StatelessWidget {
-  const CardCrazeScreen({Key? key}) : super(key: key);
+  const CardCrazeScreen({super.key});
 
   Widget _optionBtn(
     BuildContext context,
