@@ -1,0 +1,16 @@
+/build/
+/.dart_tool/
+
+**/build/
+
+/.gradle/
+
+/local.properties
+
+**/*.apk
+
+
+.env.backup
+
+*.backup
+
