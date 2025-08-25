@@ -16,7 +16,7 @@ android {
 
     defaultConfig {
         applicationId = "com.example.flutter_application_1"
-        minSdk = flutter.minSdkVersion
+        minSdk = maxOf(23, flutter.minSdkVersion)
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
@@ -30,10 +30,21 @@ android {
     kotlinOptions { jvmTarget = "17" }
 
     buildTypes {
-        release {
-            // TODO: replace debug signing with your real release config before shipping
+        debug {
             signingConfig = signingConfigs.getByName("debug")
             isMinifyEnabled = false
+            isShrinkResources = false   // <- must be false if minify is false
+        }
+        release {
+            // TODO: replace debug signing with your real release signing before shipping
+            signingConfig = signingConfigs.getByName("debug")
+            isMinifyEnabled = false     // enable later if you want shrinking
+            isShrinkResources = false   // <- must be false since minify is false
+            // If/when you enable shrinking later:
+            // proguardFiles(
+            //     getDefaultProguardFile("proguard-android-optimize.txt"),
+            //     "proguard-rules.pro"
+            // )
         }
     }
 }
