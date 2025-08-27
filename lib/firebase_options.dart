@@ -65,5 +65,4 @@ class DefaultFirebaseOptions {
     storageBucket: 'gab-and-go.firebasestorage.app',
     iosBundleId: 'com.example.flutterApplication1',
   );
-
 }
