@@ -31,7 +31,7 @@ class AiService {
             'POST',
             Uri.parse('https://api.openai.com/v1/audio/transcriptions'),
           )
-          ..headers['Authorization'] = 'Bearer ${_apiKey}'
+          ..headers['Authorization'] = 'Bearer $_apiKey'
           ..fields['model'] = model
           ..files.add(await http.MultipartFile.fromPath('file', file.path));
 
@@ -81,7 +81,7 @@ class AiService {
     final res = await http.post(
       Uri.parse('https://api.openai.com/v1/chat/completions'),
       headers: {
-        'Authorization': 'Bearer ${_apiKey}',
+        'Authorization': 'Bearer $_apiKey',
         'Content-Type': 'application/json',
       },
       body: jsonEncode(body),

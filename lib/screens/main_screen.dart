@@ -1,6 +1,6 @@
 // lib/screens/main_screen.dart
-
 import 'package:flutter/material.dart';
+import 'package:flutter_application_1/routes.dart';
 
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
@@ -54,8 +54,9 @@ class _MainScreenState extends State<MainScreen>
               'Gab & Go',
               style: TextStyle(
                 color: Colors.white,
-                fontSize: 24,
+                fontSize: 28,
                 fontWeight: FontWeight.bold,
+                letterSpacing: 0.5,
               ),
             ),
             const SizedBox(height: 24),
@@ -63,11 +64,11 @@ class _MainScreenState extends State<MainScreen>
               padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 24),
               decoration: BoxDecoration(
                 color: Colors.white,
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(12),
               ),
               child: const Text(
                 'Welcome to Gab & Go',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
               ),
             ),
             const SizedBox(height: 16),
@@ -107,12 +108,14 @@ class _MainScreenState extends State<MainScreen>
               padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 20),
               child: Column(
                 children: [
-                  // Create account → go to the form screen
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton(
                       onPressed:
-                          () => Navigator.pushNamed(context, '/createForm'),
+                          () => Navigator.pushNamed(
+                            context,
+                            Routes.createAccountForm,
+                          ),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.white,
                         foregroundColor: Colors.black,
@@ -125,18 +128,17 @@ class _MainScreenState extends State<MainScreen>
                         'Create an account',
                         style: TextStyle(
                           fontSize: 16,
-                          fontWeight: FontWeight.w600,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
                     ),
                   ),
                   const SizedBox(height: 12),
-
-                  // Log In → open real sign-in screen
                   SizedBox(
                     width: 150,
                     child: ElevatedButton(
-                      onPressed: () => Navigator.pushNamed(context, '/signin'),
+                      onPressed:
+                          () => Navigator.pushNamed(context, Routes.signIn),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.white,
                         foregroundColor: Colors.black,
@@ -149,7 +151,7 @@ class _MainScreenState extends State<MainScreen>
                         'Log In',
                         style: TextStyle(
                           fontSize: 14,
-                          fontWeight: FontWeight.w600,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
                     ),

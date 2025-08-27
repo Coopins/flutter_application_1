@@ -1,9 +1,9 @@
-// lib/screens/lesson_plan_screen.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter_application_1/routes.dart';
 
 class LessonPlanScreen extends StatefulWidget {
   const LessonPlanScreen({super.key});
@@ -22,16 +22,23 @@ class _LessonPlanScreenState extends State<LessonPlanScreen> {
 
   bool _loading = true;
   bool _expanded = true;
-  bool _langPassed = false; // true if a language arg was provided
+  bool _langPassed = false;
+  bool _isSpeaking = false;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     final args = (ModalRoute.of(context)?.settings.arguments as Map?) ?? {};
+
     _lessonId = args['lessonId'] as String?;
     _langPassed = args.containsKey('language');
     _language = (args['language'] as String?) ?? _language;
     _ttsLocale = (args['ttsLocale'] as String?) ?? _ttsLocale;
+
+    final initialMd = (args['initialMarkdown'] as String?)?.trim();
+    if (initialMd != null && initialMd.isNotEmpty) {
+      _markdown = initialMd;
+    }
 
     _initTts();
     _fetchLessonPlan();
@@ -41,6 +48,12 @@ class _LessonPlanScreenState extends State<LessonPlanScreen> {
     await _tts.setLanguage(_ttsLocale);
     await _tts.setSpeechRate(0.45);
     await _tts.setPitch(1.0);
+    await _tts.awaitSpeakCompletion(true);
+    _tts.setStartHandler(() => setState(() => _isSpeaking = true));
+    _tts.setCompletionHandler(() => setState(() => _isSpeaking = false));
+    _tts.setCancelHandler(() => setState(() => _isSpeaking = false));
+    _tts.setPauseHandler(() => setState(() => _isSpeaking = false));
+    _tts.setContinueHandler(() => setState(() => _isSpeaking = true));
   }
 
   Future<void> _fetchLessonPlan() async {
@@ -48,10 +61,7 @@ class _LessonPlanScreenState extends State<LessonPlanScreen> {
 
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
-      setState(() {
-        _markdown = '';
-        _loading = false;
-      });
+      setState(() => _loading = false);
       return;
     }
 
@@ -66,16 +76,17 @@ class _LessonPlanScreenState extends State<LessonPlanScreen> {
       if (_lessonId != null) {
         doc = await col.doc(_lessonId!).get();
       } else {
-        // If language provided, show latest for that language; else latest overall
         Query<Map<String, dynamic>> q = col
             .orderBy('createdAt', descending: true)
             .limit(1);
+
         if (_langPassed) {
           q = col
               .where('language', isEqualTo: _language)
               .orderBy('createdAt', descending: true)
               .limit(1);
         }
+
         final snap = await q.get();
         if (snap.docs.isNotEmpty) {
           doc = snap.docs.first;
@@ -83,30 +94,43 @@ class _LessonPlanScreenState extends State<LessonPlanScreen> {
         }
       }
 
+      final data = doc?.data();
+      final md =
+          (data?['markdown'] as String?) ?? (data?['plan'] as String?) ?? '';
+
       setState(() {
-        _markdown = (doc?.data()?['markdown'] as String?)?.trim() ?? '';
+        if (md.trim().isNotEmpty) _markdown = md.trim();
         _loading = false;
       });
     } catch (_) {
-      setState(() {
-        _markdown = '';
-        _loading = false;
-      });
+      setState(() => _loading = false);
     }
   }
 
-  Future<void> _speak() async {
-    if (_markdown.trim().isEmpty) return;
-    final plain = _markdown
+  String _plainFromMarkdown(String md) {
+    return md
         .replaceAll(RegExp(r'[#*_>`\-]'), '')
         .replaceAll(RegExp(r'\[(.*?)\]\((.*?)\)'), r'\1');
+  }
+
+  Future<void> _play() async {
+    final plain = _plainFromMarkdown(_markdown);
+    if (plain.trim().isEmpty) return;
     await _tts.stop();
     await _tts.speak(plain);
   }
 
+  Future<void> _pauseOrStop() async {
+    try {
+      await _tts.pause();
+    } catch (_) {
+      await _tts.stop();
+    }
+  }
+
   @override
   void dispose() {
-    _tts.stop(); // flutter_tts has no dispose()
+    _tts.stop();
     super.dispose();
   }
 
@@ -127,41 +151,57 @@ class _LessonPlanScreenState extends State<LessonPlanScreen> {
         title: const Text('Lesson Plan'),
         actions: [
           IconButton(
+            tooltip: 'Play',
             icon: const Icon(Icons.play_arrow_rounded),
-            onPressed: _speak,
+            onPressed: _play,
           ),
           IconButton(
+            tooltip: 'Pause',
+            icon: Icon(
+              _isSpeaking ? Icons.pause_rounded : Icons.pause_circle_outline,
+            ),
+            onPressed: _pauseOrStop,
+          ),
+          IconButton(
+            tooltip: 'Refresh',
             icon: const Icon(Icons.refresh),
             onPressed: _fetchLessonPlan,
           ),
+          IconButton(
+            tooltip: 'Home',
+            icon: const Icon(Icons.home),
+            onPressed:
+                () => Navigator.of(
+                  context,
+                ).pushNamedAndRemoveUntil(Routes.home, (r) => false),
+          ),
         ],
       ),
-      body: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Center(
-              child: Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: Text(
-                  _langPassed ? _language : 'Latest',
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: Colors.white70,
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Center(
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: Text(
+                    _langPassed ? _language : 'Spanish',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: Colors.white70,
+                    ),
                   ),
                 ),
               ),
-            ),
-            _buildPanel(theme),
-            const SizedBox(height: 12),
-            if (_loading)
-              const Center(
-                child: Padding(
+              _buildPanel(theme),
+              if (_loading)
+                const Padding(
                   padding: EdgeInsets.only(top: 20),
-                  child: CircularProgressIndicator(),
+                  child: Center(child: CircularProgressIndicator()),
                 ),
-              ),
-          ],
+            ],
+          ),
         ),
       ),
       bottomNavigationBar: SafeArea(
@@ -173,15 +213,14 @@ class _LessonPlanScreenState extends State<LessonPlanScreen> {
             borderRadius: BorderRadius.circular(28),
             child: InkWell(
               borderRadius: BorderRadius.circular(28),
-              onTap: () {
-                Navigator.of(
-                  context,
-                ).pushNamedAndRemoveUntil('/home', (r) => false);
-              },
+              onTap:
+                  () => Navigator.of(
+                    context,
+                  ).pushNamedAndRemoveUntil(Routes.home, (r) => false),
               splashColor: Colors.white24,
-              child: Row(
+              child: const Row(
                 mainAxisAlignment: MainAxisAlignment.center,
-                children: const [
+                children: [
                   Icon(Icons.home_filled, color: Colors.white),
                   SizedBox(width: 10),
                   Text(
@@ -216,7 +255,7 @@ class _LessonPlanScreenState extends State<LessonPlanScreen> {
         ),
         childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         children: [
-          if (!_loading && _markdown.trim().isEmpty)
+          if (_markdown.trim().isEmpty && !_loading)
             Padding(
               padding: const EdgeInsets.only(bottom: 8, top: 4),
               child: Text(
@@ -228,7 +267,6 @@ class _LessonPlanScreenState extends State<LessonPlanScreen> {
             ),
           if (_markdown.trim().isNotEmpty)
             Container(
-              constraints: const BoxConstraints(minHeight: 120),
               decoration: BoxDecoration(
                 color: const Color(0xFF141923),
                 borderRadius: BorderRadius.circular(8),
@@ -248,9 +286,9 @@ class _LessonPlanScreenState extends State<LessonPlanScreen> {
             ),
           const SizedBox(height: 12),
           TextButton.icon(
-            onPressed: _speak,
+            onPressed: _play,
             icon: const Icon(Icons.volume_up_rounded),
-            label: const Text('Listen'),
+            label: Text(_isSpeaking ? 'Speaking…' : 'Listen'),
           ),
         ],
       ),

@@ -12,6 +12,11 @@
 .swiftpm/
 migrate_working_dir/
 
+# Environment files (do not commit secrets)
+.env
+*.env
+!.env.sample
+
 # IntelliJ related
 *.iml
 *.ipr
@@ -47,4 +52,3 @@ app.*.map.json
 android/.gradle/
 
 **/.gradle/
-

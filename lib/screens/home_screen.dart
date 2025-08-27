@@ -1,13 +1,16 @@
+// lib/screens/home_screen.dart
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_application_1/routes.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
 
-  Future<void> _go(BuildContext context, String route) async {
+  void _go(BuildContext context, String route) {
     HapticFeedback.selectionClick();
+    final navigator = Navigator.of(context);
     try {
-      await Navigator.pushNamed(context, route);
+      navigator.pushNamed(route);
     } catch (_) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -77,7 +80,7 @@ class HomeScreen extends StatelessWidget {
                   context,
                   Icons.menu_book,
                   'My Lesson Plan',
-                  '/lessonPlan',
+                  Routes.lessonPlan,
                 ),
                 _tile(context, Icons.view_module, 'Flashcards', '/flashcards'),
               ],
@@ -96,7 +99,7 @@ class HomeScreen extends StatelessWidget {
                   context,
                   Icons.chat_bubble,
                   'Fluency Practice',
-                  '/fluency',
+                  Routes.fluency,
                 ),
               ],
             ),
@@ -115,41 +118,59 @@ class HomeScreen extends StatelessWidget {
                   context,
                   Icons.translate,
                   'Language Selection',
-                  '/languageSelection',
+                  Routes.languageSelection,
                 ),
               ],
             ),
 
             const Spacer(),
-
-            Container(
-              color: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: [
-                  InkWell(
-                    onTap: () => Navigator.popUntil(context, (r) => r.isFirst),
-                    borderRadius: BorderRadius.circular(8),
-                    child: const Padding(
-                      padding: EdgeInsets.all(6),
-                      child: Icon(Icons.home, size: 28),
-                    ),
-                  ),
-                  const Icon(Icons.search, size: 28),
-                  const Icon(Icons.person, size: 28),
-                  InkWell(
-                    onTap: () => _go(context, '/logout'),
-                    borderRadius: BorderRadius.circular(8),
-                    child: const Padding(
-                      padding: EdgeInsets.all(6),
-                      child: Icon(Icons.settings, size: 28),
-                    ),
-                  ),
-                ],
-              ),
-            ),
           ],
+        ),
+      ),
+
+      // Bottom bar moved here so it's always safe-area aware.
+      bottomNavigationBar: SafeArea(
+        top: false,
+        child: Material(
+          color: Colors.white,
+          child: SizedBox(
+            height: 56,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                IconButton(
+                  tooltip: 'Home',
+                  onPressed:
+                      () => Navigator.popUntil(context, (r) => r.isFirst),
+                  icon: const Icon(Icons.home, size: 28, color: Colors.black),
+                ),
+                IconButton(
+                  tooltip: 'Search',
+                  onPressed: () {
+                    // Placeholder – wire to a search screen when ready
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Search coming soon')),
+                    );
+                  },
+                  icon: const Icon(Icons.search, size: 28, color: Colors.black),
+                ),
+                IconButton(
+                  tooltip: 'Profile',
+                  onPressed: () => _go(context, Routes.profile),
+                  icon: const Icon(Icons.person, size: 28, color: Colors.black),
+                ),
+                IconButton(
+                  tooltip: 'Settings',
+                  onPressed: () => _go(context, Routes.settings),
+                  icon: const Icon(
+                    Icons.settings,
+                    size: 28,
+                    color: Colors.black,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );

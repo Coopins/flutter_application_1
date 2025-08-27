@@ -1,12 +1,13 @@
-// lib/screens/fluency_assessment_screen.dart
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_tts/flutter_tts.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:speech_to_text/speech_recognition_result.dart';
 
-import '../services/gabi_service.dart';
-import '../services/lesson_plan_storage.dart';
+import 'package:flutter_application_1/services/gabi_service.dart';
+import 'package:flutter_application_1/services/lesson_plan_storage.dart';
+import 'package:flutter_application_1/routes.dart';
 
 class FluencyAssessmentScreen extends StatefulWidget {
   final String? selectedLanguage;
@@ -19,12 +20,12 @@ class FluencyAssessmentScreen extends StatefulWidget {
 
 class _FluencyAssessmentScreenState extends State<FluencyAssessmentScreen> {
   final stt.SpeechToText _stt = stt.SpeechToText();
+  final FlutterTts _tts = FlutterTts();
 
   bool _available = false;
   bool _listening = false;
   bool _processing = false;
 
-  // idempotency + navigation guards
   bool _savedOnce = false;
   bool _navigated = false;
 
@@ -32,6 +33,8 @@ class _FluencyAssessmentScreenState extends State<FluencyAssessmentScreen> {
   String _ttsLocale = 'en-US';
   String _transcript = '';
   Timer? _safetyTimeout;
+
+  stt.LocaleName? _chosenLocale;
 
   @override
   void didChangeDependencies() {
@@ -47,22 +50,75 @@ class _FluencyAssessmentScreenState extends State<FluencyAssessmentScreen> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _initAndListen());
+    WidgetsBinding.instance.addPostFrameCallback((_) => _introThenListen());
   }
 
-  Future<void> _initAndListen() async {
+  String _langPrefix(String language) {
+    switch (language) {
+      case 'Spanish':
+        return 'es';
+      case 'French':
+        return 'fr';
+      case 'German':
+        return 'de';
+      case 'Chinese':
+        return 'zh';
+      default:
+        return 'en';
+    }
+  }
+
+  String _questionFor(String language) {
+    switch (language) {
+      case 'Spanish':
+        return '¿Qué hiciste el fin de semana pasado?';
+      case 'French':
+        return 'Qu’as-tu fait le week-end dernier ?';
+      case 'German':
+        return 'Was hast du letztes Wochenende gemacht?';
+      case 'Chinese':
+        return '你上个周末做了什么？';
+      default:
+        return 'What did you do last weekend?';
+    }
+  }
+
+  Future<void> _introThenListen() async {
+    try {
+      await _tts.setLanguage(_ttsLocale);
+      await _tts.setSpeechRate(0.45);
+      await _tts.setPitch(1.0);
+
+      final intro =
+          "Hi! I’m going to assess your fluency in $_language. Please answer the following in $_language.";
+      final question = _questionFor(_language);
+
+      await _tts.awaitSpeakCompletion(true);
+      await _tts.stop();
+      await _tts.speak("$intro $question");
+      await Future.delayed(const Duration(milliseconds: 250));
+      await _initAndStartListening();
+    } catch (_) {
+      await _initAndStartListening();
+    }
+  }
+
+  Future<void> _initAndStartListening() async {
     _available = await _stt.initialize(
       onStatus: (s) {
-        // When STT is "done" and we have speech, process it.
         if (s == 'done' && !_processing && _transcript.trim().isNotEmpty) {
           _processTranscript();
         }
       },
       onError: (e) {
         if (!mounted) return;
+        final msg =
+            e.errorMsg == 'error_no_match'
+                ? 'Didn’t catch that. Try again, a bit closer to the mic.'
+                : 'Speech error: ${e.errorMsg}';
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('Speech error: ${e.errorMsg}')));
+        ).showSnackBar(SnackBar(content: Text(msg)));
         setState(() => _listening = false);
       },
     );
@@ -77,45 +133,46 @@ class _FluencyAssessmentScreenState extends State<FluencyAssessmentScreen> {
       return;
     }
 
-    await _startListening();
-  }
+    final locales = await _stt.locales();
+    final system = await _stt.systemLocale();
+    final p = _langPrefix(_language).toLowerCase();
 
-  String _localeForLanguage(String language) {
-    switch (language) {
-      case 'Spanish':
-        return 'es_ES';
-      case 'French':
-        return 'fr_FR';
-      case 'German':
-        return 'de_DE';
-      case 'Chinese':
-        return 'zh_CN';
-      default:
-        return 'en_US';
+    stt.LocaleName? pick;
+    for (final l in locales) {
+      final id = l.localeId.toLowerCase();
+      if (id.startsWith('${p}_') || id.startsWith('${p}-') || id == p) {
+        pick = l;
+        break;
+      }
     }
+    _chosenLocale = pick ?? system;
+
+    await Future.delayed(const Duration(milliseconds: 150));
+    await _startListeningLong();
   }
 
-  Future<void> _startListening() async {
+  Future<void> _startListeningLong() async {
     if (!_available || _listening) return;
     setState(() {
       _transcript = '';
       _listening = true;
-      _savedOnce = false; // reset guards for a new attempt
+      _savedOnce = false;
       _navigated = false;
     });
 
     await _stt.listen(
       onResult: _onSpeechResult,
-      listenFor: const Duration(seconds: 15),
-      pauseFor: const Duration(seconds: 2), // auto‑stop after 2s silence
-      partialResults: true,
-      localeId: _localeForLanguage(_language),
-      listenMode: stt.ListenMode.confirmation,
+      listenFor: const Duration(minutes: 1),
+      pauseFor: const Duration(seconds: 5),
+      localeId: _chosenLocale?.localeId,
+      listenOptions: stt.SpeechListenOptions(
+        partialResults: true,
+        listenMode: stt.ListenMode.dictation,
+      ),
     );
 
-    // Safety: if STT never calls "done", stop after 16s
     _safetyTimeout?.cancel();
-    _safetyTimeout = Timer(const Duration(seconds: 16), () async {
+    _safetyTimeout = Timer(const Duration(minutes: 1, seconds: 5), () async {
       if (_listening) await _stopListening();
     });
   }
@@ -135,26 +192,25 @@ class _FluencyAssessmentScreenState extends State<FluencyAssessmentScreen> {
   void _onSpeechResult(SpeechRecognitionResult result) {
     setState(() => _transcript = result.recognizedWords);
     if (result.finalResult) {
-      _stopListening(); // triggers processing
+      _stopListening();
     }
   }
 
   Future<void> _processTranscript() async {
-    if (_processing || _savedOnce) return; // strong guard
+    if (_processing || _savedOnce) return;
     setState(() => _processing = true);
 
     try {
       final text = _transcript.trim();
       if (text.isEmpty) throw Exception('No speech detected');
 
-      final plan = await GabiService.generateLessonPlanFromTranscript(
+      final planMd = await GabiService.generateLessonPlanFromTranscript(
         transcript: text,
         language: _language,
       );
 
-      if (_savedOnce) return; // double-check race
       final id = await LessonPlanStorage.savePlan(
-        markdown: plan,
+        markdown: planMd,
         language: _language,
       );
       _savedOnce = true;
@@ -162,14 +218,14 @@ class _FluencyAssessmentScreenState extends State<FluencyAssessmentScreen> {
       if (!mounted || _navigated) return;
       _navigated = true;
       HapticFeedback.lightImpact();
-      // Replace current screen to avoid stacking multiple copies
       Navigator.pushReplacementNamed(
         context,
-        '/lessonPlan',
+        Routes.lessonPlan,
         arguments: {
           'lessonId': id,
           'language': _language,
           'ttsLocale': _ttsLocale,
+          'initialMarkdown': planMd,
         },
       );
     } catch (e) {
@@ -185,7 +241,8 @@ class _FluencyAssessmentScreenState extends State<FluencyAssessmentScreen> {
   @override
   void dispose() {
     _safetyTimeout?.cancel();
-    _stt.cancel(); // end any active session
+    _stt.cancel();
+    _tts.stop();
     super.dispose();
   }
 
@@ -196,15 +253,24 @@ class _FluencyAssessmentScreenState extends State<FluencyAssessmentScreen> {
         _processing
             ? 'Generating lesson plan…'
             : _listening
-            ? 'Listening… (pause to finish)'
+            ? 'Listening… tap mic to stop'
             : 'Tap mic to start';
 
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
         title: const Text('Fluency Assessment'),
-        backgroundColor: Colors.black,
-        elevation: 0,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.home),
+            onPressed:
+                () => Navigator.pushNamedAndRemoveUntil(
+                  context,
+                  Routes.home,
+                  (r) => false,
+                ),
+          ),
+        ],
       ),
       body: Center(
         child: Column(
@@ -220,7 +286,7 @@ class _FluencyAssessmentScreenState extends State<FluencyAssessmentScreen> {
                         if (_listening) {
                           await _stopListening();
                         } else {
-                          await _startListening();
+                          await _startListeningLong();
                         }
                       },
               child: AnimatedContainer(
@@ -230,13 +296,13 @@ class _FluencyAssessmentScreenState extends State<FluencyAssessmentScreen> {
                 decoration: BoxDecoration(
                   color:
                       _listening
-                          ? purple.withOpacity(0.25)
+                          ? purple.withValues(alpha: 0.25)
                           : const Color(0xFF1A1F29),
                   shape: BoxShape.circle,
                   boxShadow: [
                     if (_listening)
                       BoxShadow(
-                        color: purple.withOpacity(0.4),
+                        color: purple.withValues(alpha: 0.4),
                         blurRadius: 24,
                         spreadRadius: 4,
                       ),

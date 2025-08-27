@@ -128,7 +128,7 @@ class LessonsHubScreen extends StatelessWidget {
 class _ProgressChip extends StatelessWidget {
   final int done;
   final int total;
-  const _ProgressChip({super.key, required this.done, required this.total});
+  const _ProgressChip({required this.done, required this.total});
 
   @override
   Widget build(BuildContext context) {

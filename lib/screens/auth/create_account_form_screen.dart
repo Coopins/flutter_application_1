@@ -1,7 +1,7 @@
-// lib/screens/auth/create_account_form_screen.dart
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter_application_1/routes.dart';
 
 class CreateAccountFormScreen extends StatefulWidget {
   const CreateAccountFormScreen({super.key});
@@ -50,7 +50,6 @@ class _CreateAccountFormScreenState extends State<CreateAccountFormScreen> {
     final password = _passwordCtl.text;
 
     try {
-      // 1) Create user in Firebase Auth
       final cred = await FirebaseAuth.instance.createUserWithEmailAndPassword(
         email: email,
         password: password,
@@ -63,13 +62,11 @@ class _CreateAccountFormScreenState extends State<CreateAccountFormScreen> {
         );
       }
 
-      // 2) Update displayName on the auth profile
       final displayName = '$firstName $lastName'.trim();
       try {
         await user.updateDisplayName(displayName);
       } catch (_) {}
 
-      // 3) Upsert user profile in Firestore
       await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
         'firstName': firstName,
         'lastName': lastName,
@@ -79,20 +76,20 @@ class _CreateAccountFormScreenState extends State<CreateAccountFormScreen> {
         'provider': 'password',
         'createdAt': FieldValue.serverTimestamp(),
         'lastActive': FieldValue.serverTimestamp(),
-        'onboardingComplete': false, // still goes to language select
+        'onboardingComplete': false,
       }, SetOptions(merge: true));
 
       if (!mounted) return;
 
-      // 4) Navigate to Language Selection (clear back stack)
+      // go to language selection
       Navigator.of(
         context,
-      ).pushNamedAndRemoveUntil('/languageSelect', (route) => false);
+      ).pushNamedAndRemoveUntil(Routes.languageSelection, (route) => false);
     } on FirebaseAuthException catch (e) {
       setState(() {
         _error = _friendlyAuthError(e);
       });
-    } catch (e) {
+    } catch (_) {
       setState(() {
         _error = 'Something went wrong. Please try again.';
       });
@@ -156,8 +153,6 @@ class _CreateAccountFormScreenState extends State<CreateAccountFormScreen> {
                       ),
                     ),
                     const SizedBox(height: 24),
-
-                    // First name
                     TextFormField(
                       controller: _firstNameCtl,
                       textInputAction: TextInputAction.next,
@@ -170,8 +165,6 @@ class _CreateAccountFormScreenState extends State<CreateAccountFormScreen> {
                                   : null,
                     ),
                     const SizedBox(height: 12),
-
-                    // Last name
                     TextFormField(
                       controller: _lastNameCtl,
                       textInputAction: TextInputAction.next,
@@ -184,8 +177,6 @@ class _CreateAccountFormScreenState extends State<CreateAccountFormScreen> {
                                   : null,
                     ),
                     const SizedBox(height: 12),
-
-                    // Phone number
                     TextFormField(
                       controller: _phoneCtl,
                       keyboardType: TextInputType.phone,
@@ -199,8 +190,6 @@ class _CreateAccountFormScreenState extends State<CreateAccountFormScreen> {
                                   : null,
                     ),
                     const SizedBox(height: 12),
-
-                    // Email
                     TextFormField(
                       controller: _emailCtl,
                       keyboardType: TextInputType.emailAddress,
@@ -215,8 +204,6 @@ class _CreateAccountFormScreenState extends State<CreateAccountFormScreen> {
                       },
                     ),
                     const SizedBox(height: 12),
-
-                    // Password
                     TextFormField(
                       controller: _passwordCtl,
                       obscureText: true,
@@ -230,8 +217,6 @@ class _CreateAccountFormScreenState extends State<CreateAccountFormScreen> {
                       },
                     ),
                     const SizedBox(height: 12),
-
-                    // Confirm password
                     TextFormField(
                       controller: _confirmCtl,
                       obscureText: true,
@@ -243,7 +228,6 @@ class _CreateAccountFormScreenState extends State<CreateAccountFormScreen> {
                                   ? null
                                   : 'Passwords don’t match',
                     ),
-
                     if (_error != null)
                       Padding(
                         padding: const EdgeInsets.only(top: 12, bottom: 8),
@@ -252,10 +236,7 @@ class _CreateAccountFormScreenState extends State<CreateAccountFormScreen> {
                           style: const TextStyle(color: Colors.red),
                         ),
                       ),
-
                     const SizedBox(height: 16),
-
-                    // Continue button
                     SizedBox(
                       width: 200,
                       child: ElevatedButton(
@@ -286,10 +267,7 @@ class _CreateAccountFormScreenState extends State<CreateAccountFormScreen> {
                                 ),
                       ),
                     ),
-
                     const SizedBox(height: 12),
-
-                    // Continue with SSO (placeholder)
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton(
@@ -317,7 +295,6 @@ class _CreateAccountFormScreenState extends State<CreateAccountFormScreen> {
                         ),
                       ),
                     ),
-
                     const SizedBox(height: 24),
                   ],
                 ),

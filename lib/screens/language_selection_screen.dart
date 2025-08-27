@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_application_1/routes.dart';
 
 class LanguageSelectionScreen extends StatefulWidget {
   const LanguageSelectionScreen({super.key});
@@ -92,7 +93,7 @@ class _LanguageSelectionScreenState extends State<LanguageSelectionScreen> {
                           final tts = _ttsLocaleFor(_selected!);
                           Navigator.pushNamed(
                             context,
-                            '/fluency',
+                            Routes.fluency,
                             arguments: {
                               'selectedLanguage': _selected!,
                               'ttsLocale': tts,

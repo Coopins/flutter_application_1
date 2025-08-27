@@ -1,169 +1,115 @@
-import 'package:flutter/material.dart';
+import 'dart:async';
 import 'package:firebase_core/firebase_core.dart';
-import 'firebase_options.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
-import 'package:permission_handler/permission_handler.dart';
-import 'package:speech_to_text/speech_to_text.dart' as stt;
-import 'package:flutter_tts/flutter_tts.dart';
+import 'firebase_options.dart';
+import 'routes.dart';
+
+// Screens
+import 'screens/main_screen.dart';
+import 'screens/home_screen.dart';
+import 'screens/auth/sign_in_screen.dart';
+import 'screens/auth/create_account_form_screen.dart';
+import 'screens/language_selection_screen.dart';
+import 'screens/fluency_assessment_screen.dart';
+import 'screens/lesson_plan_screen.dart';
+import 'screens/profile_screen.dart';
+import 'screens/settings_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Load .env (best-effort)
+  try {
+    await dotenv.load(fileName: '.env');
+  } catch (_) {
+    // ignore if missing in dev
+  }
+
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-  debugPrint('✅ Firebase initialized for gab-and-go');
-  runApp(const MyApp());
+
+  // BYPASS_AUTH from --dart-define (accepts true/1/t, case-insensitive)
+  const String bypassStr = String.fromEnvironment(
+    'BYPASS_AUTH',
+    defaultValue: 'false',
+  );
+  final bool bypass =
+      const {'true': true, '1': true, 't': true, 'yes': true}[bypassStr
+          .toLowerCase()] ??
+      false;
+
+  if (bypass) {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || !user.isAnonymous) {
+      await FirebaseAuth.instance.signInAnonymously();
+    }
+  }
+
+  // Log a one-liner so we can see auth state at launch.
+  final u = FirebaseAuth.instance.currentUser;
+  // ignore: avoid_print
+  print(
+    'Auth at start -> uid=${u?.uid ?? "(none)"}'
+    ', anon=${u?.isAnonymous == true}'
+    ', bypass=$bypass',
+  );
+
+  // Choose starting route
+  final String initialRoute = bypass ? Routes.languageSelection : Routes.main;
+
+  runApp(GabAndGoApp(initialRoute: initialRoute));
 }
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+class GabAndGoApp extends StatelessWidget {
+  final String initialRoute;
+  const GabAndGoApp({super.key, required this.initialRoute});
 
   @override
   Widget build(BuildContext context) {
+    final theme = ThemeData(
+      brightness: Brightness.dark,
+      scaffoldBackgroundColor: Colors.black,
+      appBarTheme: const AppBarTheme(
+        backgroundColor: Colors.black,
+        elevation: 0,
+        titleTextStyle: TextStyle(
+          color: Colors.white,
+          fontSize: 20,
+          fontWeight: FontWeight.w700,
+        ),
+        iconTheme: IconThemeData(color: Colors.white),
+      ),
+      useMaterial3: true,
+    );
+
+    // Lock device orientation to portrait (optional)
+    SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+
     return MaterialApp(
       title: 'Gab & Go',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
-      ),
-      home: const MyHomePage(title: 'Gab & Go Home'),
-    );
-  }
-}
-
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
-  final String title;
-
-  @override
-  State<MyHomePage> createState() => _MyHomePageState();
-}
-
-class _MyHomePageState extends State<MyHomePage> {
-  final stt.SpeechToText _speech = stt.SpeechToText();
-  final FlutterTts _tts = FlutterTts();
-
-  bool _sttAvailable = false;
-  bool _listening = false;
-  String _text = '';
-  String _status = 'Idle';
-
-  @override
-  void initState() {
-    super.initState();
-    _bootstrap();
-  }
-
-  Future<void> _bootstrap() async {
-    // Request mic permission
-    final mic = await Permission.microphone.request();
-    if (!mic.isGranted) {
-      setState(() => _status = 'Microphone permission denied');
-      return;
-    }
-
-    // Init STT
-    _sttAvailable = await _speech.initialize(
-      onStatus:
-          (s) => setState(() {
-            _listening = s == 'listening';
-            _status = 'STT status: $s';
-          }),
-      onError: (e) => setState(() => _status = 'STT error: ${e.errorMsg}'),
-    );
-
-    if (!_sttAvailable) setState(() => _status = 'Speech not available');
-  }
-
-  Future<void> _start() async {
-    if (!_sttAvailable) return;
-    setState(() => _status = 'Listening…');
-    await _speech.listen(
-      onResult: (r) => setState(() => _text = r.recognizedWords),
-      listenOptions: stt.SpeechListenOptions(
-        partialResults: true,
-        listenMode: stt.ListenMode.confirmation,
-      ),
-      pauseFor: const Duration(seconds: 2),
-    );
-  }
-
-  Future<void> _stop() async {
-    await _speech.stop();
-    setState(() {
-      _listening = false;
-      _status = 'Stopped';
-    });
-  }
-
-  Future<void> _speakBack() async {
-    if (_text.trim().isEmpty) return;
-    await _tts.setLanguage('en-US');
-    await _tts.setSpeechRate(0.45);
-    await _tts.speak(_text);
-  }
-
-  @override
-  void dispose() {
-    _speech.stop();
-    _tts.stop();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.title),
-        backgroundColor: cs.inversePrimary,
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            Row(
-              children: [
-                ElevatedButton(
-                  onPressed: _listening ? null : _start,
-                  child: const Text('Start STT'),
-                ),
-                const SizedBox(width: 12),
-                ElevatedButton(
-                  onPressed: _listening ? _stop : null,
-                  child: const Text('Stop STT'),
-                ),
-                const SizedBox(width: 12),
-                ElevatedButton(
-                  onPressed: _speakBack,
-                  child: const Text('Speak Back'),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Text(_status, style: TextStyle(color: cs.primary)),
-            ),
-            const SizedBox(height: 12),
-            Expanded(
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  border: Border.all(color: Colors.black12),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: SingleChildScrollView(
-                  child: Text(
-                    _text.isEmpty ? 'Say something…' : _text,
-                    style: const TextStyle(fontSize: 18),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
+      theme: theme,
+      initialRoute: initialRoute,
+      routes: {
+        Routes.main: (_) => const MainScreen(),
+        Routes.createAccountForm: (_) => const CreateAccountFormScreen(),
+        Routes.signIn: (_) => const SignInScreen(),
+        Routes.languageSelection: (_) => const LanguageSelectionScreen(),
+        Routes.fluency: (_) => const FluencyAssessmentScreen(),
+        Routes.lessonPlan: (_) => const LessonPlanScreen(),
+        Routes.home: (_) => const HomeScreen(),
+        Routes.profile: (_) => const ProfileScreen(),
+        Routes.settings: (_) => const SettingsScreen(),
+      },
+      // Fallback for unknown routes
+      onUnknownRoute:
+          (_) => MaterialPageRoute(
+            builder: (_) => const HomeScreen(),
+            settings: const RouteSettings(name: Routes.home),
+          ),
     );
   }
 }
