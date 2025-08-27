@@ -1,165 +1,102 @@
-import 'dart:io';
 import 'dart:convert';
-import 'package:flutter/material.dart';
-import 'package:permission_handler/permission_handler.dart';
-import 'package:record/record.dart';
 import 'package:http/http.dart' as http;
-import 'package:path_provider/path_provider.dart';
-import 'package:path/path.dart' as path;
+import 'package:flutter/foundation.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
-class FluencyAssessmentScreen extends StatefulWidget {
-  final String selectedLanguage;
+class OpenAIService {
+  OpenAIService._();
+  static final OpenAIService instance = OpenAIService._();
 
-  const FluencyAssessmentScreen({Key? key, required this.selectedLanguage})
-    : super(key: key);
+  bool _ready = false;
+  late String _apiKey;
+  late String _baseUrl; // cleaned
+  late String _model;
 
-  @override
-  State<FluencyAssessmentScreen> createState() =>
-      _FluencyAssessmentScreenState();
-}
-
-class _FluencyAssessmentScreenState extends State<FluencyAssessmentScreen> {
-  final AudioRecorder _recorder = AudioRecorder();
-  bool _isListening = false;
-  String _lessonPlan = '';
-
-  @override
-  void initState() {
-    super.initState();
-    _startAssessmentFlow();
+  String _safeEnv(String k, {String fallback = ''}) {
+    try {
+      return dotenv.env[k] ?? fallback;
+    } catch (_) {
+      return fallback;
+    }
   }
 
-  Future<void> _startAssessmentFlow() async {
-    final permission = await Permission.microphone.request();
-    if (!permission.isGranted) {
-      setState(() => _lessonPlan = "Microphone permission denied.");
-      return;
+  // Ensure base URL is sane; if not, force the canonical endpoint.
+  String _cleanBaseUrl(String raw) {
+    final s = (raw).trim();
+    if (s.isEmpty) return 'https://api.openai.com/v1';
+    // Strip trailing slashes
+    final cleaned = s.replaceAll(RegExp(r'/+$'), '');
+    // Heuristic: if it doesn't mention openai.com and isn't https, force canonical
+    if (!cleaned.startsWith('http') || !cleaned.contains('openai.com')) {
+      return 'https://api.openai.com/v1';
     }
+    return cleaned;
+  }
 
-    setState(() => _isListening = true);
+  Uri _chatUri() => Uri.parse('$_baseUrl/chat/completions');
 
-    final dir = await getTemporaryDirectory();
-    final filePath = path.join(dir.path, 'input.wav');
-
-    await _recorder.start(
-      const RecordConfig(encoder: AudioEncoder.wav, sampleRate: 16000),
-      path: filePath,
+  void _ensureInit() {
+    if (_ready) return;
+    _apiKey = _safeEnv('OPENAI_API_KEY');
+    _baseUrl = _cleanBaseUrl(
+      _safeEnv('OPENAI_BASE_URL', fallback: 'https://api.openai.com/v1'),
     );
+    _model = _safeEnv('OPENAI_MODEL', fallback: 'gpt-4o-mini');
 
-    await Future.delayed(const Duration(seconds: 5));
-
-    final recordedPath = await _recorder.stop();
-
-    if (recordedPath == null || !File(recordedPath).existsSync()) {
-      setState(() {
-        _isListening = false;
-        _lessonPlan = 'Recording failed.';
-      });
-      return;
+    if (_apiKey.isEmpty) {
+      throw StateError(
+        'OPENAI_API_KEY missing. Ensure .env exists, is in pubspec assets, and dotenv.load() ran.',
+      );
     }
+    _ready = true;
+  }
 
-    final transcript = await _transcribeAudio(File(recordedPath));
-    final plan = await _generateLessonPlan(transcript);
+  Future<String> chat(String systemPrompt, String userMessage) async {
+    _ensureInit();
 
-    setState(() {
-      _isListening = false;
-      _lessonPlan = plan ?? 'No lesson plan returned.';
+    final uri = _chatUri();
+    final body = jsonEncode({
+      'model': _model,
+      'messages': [
+        {'role': 'system', 'content': systemPrompt},
+        {'role': 'user', 'content': userMessage},
+      ],
+      'temperature': 0.3,
     });
 
-    Navigator.pushNamed(
-      context,
-      '/lessonPlan',
-      arguments: {'lessonPlan': _lessonPlan},
-    );
-  }
-
-  Future<String> _transcribeAudio(File file) async {
-    final request =
-        http.MultipartRequest(
-            'POST',
-            Uri.parse('https://api.openai.com/v1/audio/transcriptions'),
-          )
-          ..headers['Authorization'] = 'Bearer ${dotenv.env['OPENAI_API_KEY']}'
-          ..fields['model'] = 'whisper-1'
-          ..files.add(await http.MultipartFile.fromPath('file', file.path));
-
-    final response = await request.send();
-
-    if (response.statusCode != 200) return 'Transcription failed';
-
-    final res = await http.Response.fromStream(response);
-    return res.body.contains('"text":"')
-        ? res.body.split('"text":"')[1].split('"')[0]
-        : 'No text found.';
-  }
-
-  Future<String?> _generateLessonPlan(String transcript) async {
-    final response = await http.post(
-      Uri.parse('https://api.openai.com/v1/chat/completions'),
+    final resp = await http.post(
+      uri,
       headers: {
-        'Authorization': 'Bearer ${dotenv.env['OPENAI_API_KEY']}',
+        'Authorization': 'Bearer $_apiKey',
         'Content-Type': 'application/json',
+        'Accept': 'application/json',
       },
-      body: jsonEncode({
-        "model": "gpt-4o",
-        "messages": [
-          {
-            "role": "system",
-            "content":
-                "You are a language tutor. Create a beginner-friendly lesson plan based on the user's spoken input and target language: ${widget.selectedLanguage}.",
-          },
-          {"role": "user", "content": transcript},
-        ],
-      }),
+      body: body,
     );
 
-    if (response.statusCode != 200) {
-      print("❌ GPT error: ${response.body}");
-      return '❌ GPT request failed.';
+    // Some proxies return HTML 404; detect and explain
+    final ct = resp.headers['content-type'] ?? '';
+    final isJson = ct.contains('application/json');
+
+    if (resp.statusCode >= 200 && resp.statusCode < 300 && isJson) {
+      final json = jsonDecode(resp.body) as Map<String, dynamic>;
+      final content =
+          json['choices']?[0]?['message']?['content'] as String? ?? '';
+      return content.trim();
     }
 
-    try {
-      final json = jsonDecode(response.body);
-      final content = json['choices'][0]['message']['content'];
-      return content.replaceAll(r'\n', '\n');
-    } catch (e) {
-      print("❌ JSON parsing error: $e");
-      return '🚫 Invalid GPT response.';
+    if (!isJson) {
+      debugPrint(
+        'OpenAI non-JSON response ${resp.statusCode} at $uri\n${resp.body}',
+      );
+      throw Exception(
+        'OpenAI endpoint returned non-JSON (${resp.statusCode}). '
+        'Base URL was $_baseUrl. Check proxies/VPN and OPENAI_BASE_URL.',
+      );
     }
-  }
 
-  Widget _buildListeningView() {
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: const [
-        Icon(Icons.mic, size: 80, color: Colors.green),
-        SizedBox(height: 20),
-        Text(
-          "Gabi is listening...",
-          style: TextStyle(fontSize: 18, color: Colors.white),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildResultView() {
-    return Padding(
-      padding: const EdgeInsets.all(20),
-      child: Text(
-        _lessonPlan,
-        style: const TextStyle(fontSize: 16, color: Colors.white),
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: Center(
-        child: _isListening ? _buildListeningView() : _buildResultView(),
-      ),
-    );
+    // JSON error from OpenAI
+    debugPrint('OpenAI error ${resp.statusCode}: ${resp.body}');
+    throw Exception('OpenAI request failed (${resp.statusCode})');
   }
 }

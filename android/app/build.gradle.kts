@@ -1,40 +1,50 @@
 plugins {
     id("com.android.application")
-    id("kotlin-android")
+    kotlin("android")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
+    // Firebase Google Services
+    id("com.google.gms.google-services")
 }
 
 android {
     namespace = "com.example.flutter_application_1"
+
+    // Flutter-managed SDKs; explicitly pin NDK to silence warnings.
     compileSdk = flutter.compileSdkVersion
     ndkVersion = "27.0.12077973"
 
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
-    }
-
-    kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_11.toString()
-    }
-
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "com.example.flutter_application_1"
-        // You can update the following values to match your application needs.
-        // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = 23
+        minSdk = maxOf(23, flutter.minSdkVersion)
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }
 
+    // Java/Kotlin 17
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+    kotlinOptions { jvmTarget = "17" }
+
     buildTypes {
-        release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
+        debug {
             signingConfig = signingConfigs.getByName("debug")
+            isMinifyEnabled = false
+            isShrinkResources = false   // <- must be false if minify is false
+        }
+        release {
+            // TODO: replace debug signing with your real release signing before shipping
+            signingConfig = signingConfigs.getByName("debug")
+            isMinifyEnabled = false     // enable later if you want shrinking
+            isShrinkResources = false   // <- must be false since minify is false
+            // If/when you enable shrinking later:
+            // proguardFiles(
+            //     getDefaultProguardFile("proguard-android-optimize.txt"),
+            //     "proguard-rules.pro"
+            // )
         }
     }
 }
@@ -42,6 +52,3 @@ android {
 flutter {
     source = "../.."
 }
-
-// ADD THIS LINE AT THE VERY BOTTOM (outside any blocks)
-apply(plugin = "com.google.gms.google-services")

@@ -1,31 +1,50 @@
 // lib/screens/home_screen.dart
-
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_application_1/routes.dart';
 
 class HomeScreen extends StatelessWidget {
-  const HomeScreen({Key? key}) : super(key: key);
+  const HomeScreen({super.key});
+
+  void _go(BuildContext context, String route) {
+    HapticFeedback.selectionClick();
+    final navigator = Navigator.of(context);
+    try {
+      navigator.pushNamed(route);
+    } catch (_) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Screen not available yet. Check route in main.dart'),
+          behavior: SnackBarBehavior.floating,
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
+  }
 
   Widget _tile(
     BuildContext context,
     IconData icon,
     String label,
-    String route,
-  ) {
+    String route, {
+    double iconSize = 48,
+  }) {
     return Expanded(
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          onTap: () => Navigator.pushNamed(context, route),
-          borderRadius: BorderRadius.circular(8),
+          onTap: () => _go(context, route),
+          borderRadius: BorderRadius.circular(12),
           child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 16),
+            padding: const EdgeInsets.symmetric(vertical: 20),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(icon, size: 48, color: Colors.white),
-                const SizedBox(height: 8),
+                Icon(icon, size: iconSize, color: Colors.white),
+                const SizedBox(height: 10),
                 Text(
                   label,
+                  textAlign: TextAlign.center,
                   style: const TextStyle(color: Colors.white, fontSize: 16),
                 ),
               ],
@@ -48,27 +67,26 @@ class HomeScreen extends StatelessWidget {
               'Gab & Go',
               style: TextStyle(
                 color: Colors.white,
-                fontSize: 24,
+                fontSize: 26,
                 fontWeight: FontWeight.bold,
+                letterSpacing: 0.5,
               ),
             ),
             const SizedBox(height: 48),
 
-            // Top row: My Lesson Plan & Flashcards
             Row(
               children: [
                 _tile(
                   context,
                   Icons.menu_book,
                   'My Lesson Plan',
-                  '/lessonPlan',
+                  Routes.lessonPlan,
                 ),
                 _tile(context, Icons.view_module, 'Flashcards', '/flashcards'),
               ],
             ),
-            const SizedBox(height: 40),
+            const SizedBox(height: 32),
 
-            // Bottom row: Language Tests & Fluency Practice
             Row(
               children: [
                 _tile(
@@ -81,88 +99,78 @@ class HomeScreen extends StatelessWidget {
                   context,
                   Icons.chat_bubble,
                   'Fluency Practice',
-                  '/fluency',
+                  Routes.fluency,
                 ),
               ],
             ),
+            const SizedBox(height: 32),
 
-            // New row: Active Lessons (centered)
-            const SizedBox(height: 40),
             Row(
-              mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Flexible(
-                  child: Material(
-                    color: Colors.transparent,
-                    child: InkWell(
-                      onTap:
-                          () => Navigator.pushNamed(context, '/activeLessons'),
-                      borderRadius: BorderRadius.circular(8),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          vertical: 16,
-                          horizontal: 40,
-                        ),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: const [
-                            Icon(
-                              Icons.play_circle_fill,
-                              size: 54,
-                              color: Colors.white,
-                            ),
-                            SizedBox(height: 8),
-                            Text(
-                              'Active Lessons',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 18,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
+                _tile(
+                  context,
+                  Icons.play_circle_fill,
+                  'Active Lessons',
+                  '/activeLessons',
+                  iconSize: 54,
+                ),
+                _tile(
+                  context,
+                  Icons.translate,
+                  'Language Selection',
+                  Routes.languageSelection,
                 ),
               ],
             ),
 
             const Spacer(),
-
-            // Bottom navigation bar (static except home & settings)
-            Container(
-              color: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: [
-                  // Home icon returns to MainScreen
-                  InkWell(
-                    onTap: () => Navigator.popUntil(context, (r) => r.isFirst),
-                    borderRadius: BorderRadius.circular(8),
-                    child: const Padding(
-                      padding: EdgeInsets.all(4),
-                      child: Icon(Icons.home, size: 28),
-                    ),
-                  ),
-                  // Search icon remains static
-                  const Icon(Icons.search, size: 28),
-                  // Person icon remains static/profile placeholder
-                  const Icon(Icons.person, size: 28),
-                  // Settings icon now navigates to LogoutScreen
-                  InkWell(
-                    onTap: () => Navigator.pushNamed(context, '/logout'),
-                    borderRadius: BorderRadius.circular(8),
-                    child: const Padding(
-                      padding: EdgeInsets.all(4),
-                      child: Icon(Icons.settings, size: 28),
-                    ),
-                  ),
-                ],
-              ),
-            ),
           ],
+        ),
+      ),
+
+      // Bottom bar moved here so it's always safe-area aware.
+      bottomNavigationBar: SafeArea(
+        top: false,
+        child: Material(
+          color: Colors.white,
+          child: SizedBox(
+            height: 56,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                IconButton(
+                  tooltip: 'Home',
+                  onPressed:
+                      () => Navigator.popUntil(context, (r) => r.isFirst),
+                  icon: const Icon(Icons.home, size: 28, color: Colors.black),
+                ),
+                IconButton(
+                  tooltip: 'Search',
+                  onPressed: () {
+                    // Placeholder – wire to a search screen when ready
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Search coming soon')),
+                    );
+                  },
+                  icon: const Icon(Icons.search, size: 28, color: Colors.black),
+                ),
+                IconButton(
+                  tooltip: 'Profile',
+                  onPressed: () => _go(context, Routes.profile),
+                  icon: const Icon(Icons.person, size: 28, color: Colors.black),
+                ),
+                IconButton(
+                  tooltip: 'Settings',
+                  onPressed: () => _go(context, Routes.settings),
+                  icon: const Icon(
+                    Icons.settings,
+                    size: 28,
+                    color: Colors.black,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );

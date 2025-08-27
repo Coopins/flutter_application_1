@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:permission_handler/permission_handler.dart';
+import 'package:flutter_application_1/routes.dart';
 
 class LanguageSelectionScreen extends StatefulWidget {
-  const LanguageSelectionScreen({Key? key}) : super(key: key);
+  const LanguageSelectionScreen({super.key});
 
   @override
   State<LanguageSelectionScreen> createState() =>
@@ -10,45 +10,26 @@ class LanguageSelectionScreen extends StatefulWidget {
 }
 
 class _LanguageSelectionScreenState extends State<LanguageSelectionScreen> {
-  final List<String> _languages = ['Spanish', 'French', 'German', 'Chinese'];
-  String? _selectedLanguage;
+  final List<String> _languages = const [
+    'Spanish',
+    'French',
+    'German',
+    'Chinese',
+  ];
+  String? _selected;
 
-  Future<void> _handleContinue() async {
-    if (_selectedLanguage == null) return;
-
-    final permission = await Permission.microphone.request();
-
-    if (permission.isGranted) {
-      Navigator.pushNamed(
-        context,
-        '/fluencyAssessment',
-        arguments: {'selectedLanguage': _selectedLanguage},
-      );
-    } else {
-      showDialog(
-        context: context,
-        builder:
-            (_) => AlertDialog(
-              backgroundColor: Colors.grey[900],
-              title: const Text(
-                "Microphone Permission",
-                style: TextStyle(color: Colors.white),
-              ),
-              content: const Text(
-                "Gabi needs microphone access to assess your fluency.",
-                style: TextStyle(color: Colors.white70),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: const Text(
-                    "OK",
-                    style: TextStyle(color: Colors.purpleAccent),
-                  ),
-                ),
-              ],
-            ),
-      );
+  String _ttsLocaleFor(String language) {
+    switch (language) {
+      case 'Spanish':
+        return 'es-ES';
+      case 'French':
+        return 'fr-FR';
+      case 'German':
+        return 'de-DE';
+      case 'Chinese':
+        return 'zh-CN';
+      default:
+        return 'en-US';
     }
   }
 
@@ -58,69 +39,68 @@ class _LanguageSelectionScreenState extends State<LanguageSelectionScreen> {
       backgroundColor: Colors.black,
       appBar: AppBar(
         backgroundColor: Colors.black,
-        foregroundColor: Colors.white,
+        elevation: 0,
         title: const Text('Select Language'),
       ),
       body: Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             DropdownButtonFormField<String>(
-              value: _selectedLanguage,
-              decoration: InputDecoration(
-                filled: true,
-                fillColor: Colors.transparent,
-                enabledBorder: OutlineInputBorder(
-                  borderSide: const BorderSide(color: Colors.purpleAccent),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderSide: const BorderSide(
-                    color: Colors.purpleAccent,
-                    width: 2,
-                  ),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-              dropdownColor: Colors.black,
-              iconEnabledColor: Colors.white,
-              style: const TextStyle(color: Colors.white, fontSize: 18),
-              hint: const Text(
-                'Choose a language',
-                style: TextStyle(color: Colors.white70),
-              ),
+              value: _selected,
+              dropdownColor: const Color(0xFF1A1F29),
               items:
-                  _languages.map((language) {
-                    return DropdownMenuItem<String>(
-                      value: language,
-                      child: Text(
-                        language,
-                        style: const TextStyle(color: Colors.white),
-                      ),
-                    );
-                  }).toList(),
-              onChanged: (value) {
-                setState(() {
-                  _selectedLanguage = value;
-                });
-              },
-            ),
-            const SizedBox(height: 30),
-            ElevatedButton(
-              onPressed: _selectedLanguage != null ? _handleContinue : null,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.white,
-                foregroundColor: Colors.black,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(30),
-                ),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 40,
-                  vertical: 15,
+                  _languages
+                      .map(
+                        (l) => DropdownMenuItem(
+                          value: l,
+                          child: Text(
+                            l,
+                            style: const TextStyle(color: Colors.white),
+                          ),
+                        ),
+                      )
+                      .toList(),
+              decoration: InputDecoration(
+                labelText: 'Language',
+                labelStyle: const TextStyle(color: Colors.white70),
+                filled: true,
+                fillColor: const Color(0xFF141923),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
                 ),
               ),
-              child: const Text("Continue"),
+              onChanged: (v) => setState(() => _selected = v),
+            ),
+            const SizedBox(height: 20),
+            SizedBox(
+              width: double.infinity,
+              height: 52,
+              child: ElevatedButton.icon(
+                icon: const Icon(Icons.mic_none_rounded),
+                label: const Text('Continue'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF7C3AED),
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                onPressed:
+                    _selected == null
+                        ? null
+                        : () {
+                          final tts = _ttsLocaleFor(_selected!);
+                          Navigator.pushNamed(
+                            context,
+                            Routes.fluency,
+                            arguments: {
+                              'selectedLanguage': _selected!,
+                              'ttsLocale': tts,
+                            },
+                          );
+                        },
+              ),
             ),
           ],
         ),

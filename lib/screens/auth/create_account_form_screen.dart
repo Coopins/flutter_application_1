@@ -1,10 +1,10 @@
-// lib/screens/auth/create_account_form_screen.dart
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter_application_1/routes.dart';
 
 class CreateAccountFormScreen extends StatefulWidget {
-  const CreateAccountFormScreen({Key? key}) : super(key: key);
+  const CreateAccountFormScreen({super.key});
 
   @override
   State<CreateAccountFormScreen> createState() =>
@@ -16,6 +16,7 @@ class _CreateAccountFormScreenState extends State<CreateAccountFormScreen> {
 
   final _firstNameCtl = TextEditingController();
   final _lastNameCtl = TextEditingController();
+  final _phoneCtl = TextEditingController();
   final _emailCtl = TextEditingController();
   final _passwordCtl = TextEditingController();
   final _confirmCtl = TextEditingController();
@@ -27,6 +28,7 @@ class _CreateAccountFormScreenState extends State<CreateAccountFormScreen> {
   void dispose() {
     _firstNameCtl.dispose();
     _lastNameCtl.dispose();
+    _phoneCtl.dispose();
     _emailCtl.dispose();
     _passwordCtl.dispose();
     _confirmCtl.dispose();
@@ -43,11 +45,11 @@ class _CreateAccountFormScreenState extends State<CreateAccountFormScreen> {
 
     final firstName = _firstNameCtl.text.trim();
     final lastName = _lastNameCtl.text.trim();
+    final phone = _phoneCtl.text.trim();
     final email = _emailCtl.text.trim();
     final password = _passwordCtl.text;
 
     try {
-      // 1) Create user in Firebase Auth
       final cred = await FirebaseAuth.instance.createUserWithEmailAndPassword(
         email: email,
         password: password,
@@ -60,32 +62,34 @@ class _CreateAccountFormScreenState extends State<CreateAccountFormScreen> {
         );
       }
 
-      // 2) Update displayName on the auth profile (non-blocking if it fails)
       final displayName = '$firstName $lastName'.trim();
       try {
         await user.updateDisplayName(displayName);
       } catch (_) {}
 
-      // 3) Upsert user profile in Firestore
       await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
         'firstName': firstName,
         'lastName': lastName,
         'displayName': displayName,
+        'phoneNumber': phone,
         'email': email,
+        'provider': 'password',
         'createdAt': FieldValue.serverTimestamp(),
         'lastActive': FieldValue.serverTimestamp(),
-        'provider': 'password',
+        'onboardingComplete': false,
       }, SetOptions(merge: true));
 
       if (!mounted) return;
 
-      // 4) Navigate to app home (adjust if using AuthGate)
-      Navigator.of(context).pushNamedAndRemoveUntil('/home', (_) => false);
+      // go to language selection
+      Navigator.of(
+        context,
+      ).pushNamedAndRemoveUntil(Routes.languageSelection, (route) => false);
     } on FirebaseAuthException catch (e) {
       setState(() {
         _error = _friendlyAuthError(e);
       });
-    } catch (e) {
+    } catch (_) {
       setState(() {
         _error = 'Something went wrong. Please try again.';
       });
@@ -149,8 +153,6 @@ class _CreateAccountFormScreenState extends State<CreateAccountFormScreen> {
                       ),
                     ),
                     const SizedBox(height: 24),
-
-                    // First name
                     TextFormField(
                       controller: _firstNameCtl,
                       textInputAction: TextInputAction.next,
@@ -163,8 +165,6 @@ class _CreateAccountFormScreenState extends State<CreateAccountFormScreen> {
                                   : null,
                     ),
                     const SizedBox(height: 12),
-
-                    // Last name
                     TextFormField(
                       controller: _lastNameCtl,
                       textInputAction: TextInputAction.next,
@@ -177,8 +177,19 @@ class _CreateAccountFormScreenState extends State<CreateAccountFormScreen> {
                                   : null,
                     ),
                     const SizedBox(height: 12),
-
-                    // Email
+                    TextFormField(
+                      controller: _phoneCtl,
+                      keyboardType: TextInputType.phone,
+                      textInputAction: TextInputAction.next,
+                      autofillHints: const [AutofillHints.telephoneNumber],
+                      decoration: _dec('Phone number*'),
+                      validator:
+                          (v) =>
+                              (v == null || v.trim().isEmpty)
+                                  ? 'Required'
+                                  : null,
+                    ),
+                    const SizedBox(height: 12),
                     TextFormField(
                       controller: _emailCtl,
                       keyboardType: TextInputType.emailAddress,
@@ -193,8 +204,6 @@ class _CreateAccountFormScreenState extends State<CreateAccountFormScreen> {
                       },
                     ),
                     const SizedBox(height: 12),
-
-                    // Password
                     TextFormField(
                       controller: _passwordCtl,
                       obscureText: true,
@@ -208,8 +217,6 @@ class _CreateAccountFormScreenState extends State<CreateAccountFormScreen> {
                       },
                     ),
                     const SizedBox(height: 12),
-
-                    // Confirm password
                     TextFormField(
                       controller: _confirmCtl,
                       obscureText: true,
@@ -221,7 +228,6 @@ class _CreateAccountFormScreenState extends State<CreateAccountFormScreen> {
                                   ? null
                                   : 'Passwords don’t match',
                     ),
-
                     if (_error != null)
                       Padding(
                         padding: const EdgeInsets.only(top: 12, bottom: 8),
@@ -230,10 +236,7 @@ class _CreateAccountFormScreenState extends State<CreateAccountFormScreen> {
                           style: const TextStyle(color: Colors.red),
                         ),
                       ),
-
                     const SizedBox(height: 16),
-
-                    // Continue button (centered)
                     SizedBox(
                       width: 200,
                       child: ElevatedButton(
@@ -264,10 +267,7 @@ class _CreateAccountFormScreenState extends State<CreateAccountFormScreen> {
                                 ),
                       ),
                     ),
-
                     const SizedBox(height: 12),
-
-                    // Continue with SSO (placeholder)
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton(
@@ -295,7 +295,6 @@ class _CreateAccountFormScreenState extends State<CreateAccountFormScreen> {
                         ),
                       ),
                     ),
-
                     const SizedBox(height: 24),
                   ],
                 ),

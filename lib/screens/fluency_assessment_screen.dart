@@ -1,19 +1,17 @@
 import 'dart:async';
-import 'dart:convert';
-import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:record/record.dart';
-import 'package:http/http.dart' as http;
-import 'package:path_provider/path_provider.dart';
-import 'package:path/path.dart' as path;
-import 'package:flutter_dotenv/flutter_dotenv.dart';
-import '../services/tts_service.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_tts/flutter_tts.dart';
+import 'package:speech_to_text/speech_to_text.dart' as stt;
+import 'package:speech_to_text/speech_recognition_result.dart';
+
+import 'package:flutter_application_1/services/gabi_service.dart';
+import 'package:flutter_application_1/services/lesson_plan_storage.dart';
+import 'package:flutter_application_1/routes.dart';
 
 class FluencyAssessmentScreen extends StatefulWidget {
-  final String selectedLanguage;
-
-  const FluencyAssessmentScreen({Key? key, required this.selectedLanguage})
-    : super(key: key);
+  final String? selectedLanguage;
+  const FluencyAssessmentScreen({super.key, this.selectedLanguage});
 
   @override
   State<FluencyAssessmentScreen> createState() =>
@@ -21,262 +19,324 @@ class FluencyAssessmentScreen extends StatefulWidget {
 }
 
 class _FluencyAssessmentScreenState extends State<FluencyAssessmentScreen> {
-  final AudioRecorder _recorder = AudioRecorder();
-  bool _isListening = false;
-  String _lessonPlan = '';
-  bool _showRetry = false;
-  Timer? _silenceTimer;
-  StreamSubscription<Amplitude>? _amplitudeSub;
-  bool _hasStartedRecording = false;
-  bool _hasNavigated = false; // Prevents multiple pushes
+  final stt.SpeechToText _stt = stt.SpeechToText();
+  final FlutterTts _tts = FlutterTts();
 
-  final Map<String, Map<String, String>> _languagePrompts = {
-    'Spanish': {
-      'question': '¿Puedes hablarme un poco sobre ti?',
-      'langCode': 'es-ES',
-    },
-    'French': {
-      'question': 'Peux-tu me parler un peu de toi ?',
-      'langCode': 'fr-FR',
-    },
-    'German': {
-      'question': 'Kannst du mir ein bisschen über dich erzählen?',
-      'langCode': 'de-DE',
-    },
-    'Chinese': {'question': '你可以介绍一下你自己吗？', 'langCode': 'zh-CN'},
-  };
+  bool _available = false;
+  bool _listening = false;
+  bool _processing = false;
+
+  bool _savedOnce = false;
+  bool _navigated = false;
+
+  String _language = 'Spanish';
+  String _ttsLocale = 'en-US';
+  String _transcript = '';
+  Timer? _safetyTimeout;
+
+  stt.LocaleName? _chosenLocale;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final args = (ModalRoute.of(context)?.settings.arguments as Map?) ?? {};
+    _language =
+        args['selectedLanguage'] as String? ??
+        widget.selectedLanguage ??
+        _language;
+    _ttsLocale = args['ttsLocale'] as String? ?? _ttsLocale;
+  }
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _startIntroAndAssessment();
-    });
+    WidgetsBinding.instance.addPostFrameCallback((_) => _introThenListen());
   }
 
-  Future<void> _startIntroAndAssessment() async {
-    setState(() {
-      _isListening = true;
-      _lessonPlan = '';
-      _showRetry = false;
-      _hasNavigated = false;
-    });
+  String _langPrefix(String language) {
+    switch (language) {
+      case 'Spanish':
+        return 'es';
+      case 'French':
+        return 'fr';
+      case 'German':
+        return 'de';
+      case 'Chinese':
+        return 'zh';
+      default:
+        return 'en';
+    }
+  }
 
-    final lang = widget.selectedLanguage;
-    final prompt = _languagePrompts[lang];
+  String _questionFor(String language) {
+    switch (language) {
+      case 'Spanish':
+        return '¿Qué hiciste el fin de semana pasado?';
+      case 'French':
+        return 'Qu’as-tu fait le week-end dernier ?';
+      case 'German':
+        return 'Was hast du letztes Wochenende gemacht?';
+      case 'Chinese':
+        return '你上个周末做了什么？';
+      default:
+        return 'What did you do last weekend?';
+    }
+  }
 
-    if (prompt != null) {
+  Future<void> _introThenListen() async {
+    try {
+      await _tts.setLanguage(_ttsLocale);
+      await _tts.setSpeechRate(0.45);
+      await _tts.setPitch(1.0);
+
       final intro =
-          "We’re going to assess your fluency in $lang. Please answer the next question in $lang.";
+          "Hi! I’m going to assess your fluency in $_language. Please answer the following in $_language.";
+      final question = _questionFor(_language);
 
-      await TTSService.stop();
-      await TTSService.setDefaults();
-      await TTSService.flutterTts.awaitSpeakCompletion(true); // 🔊 Sync audio
+      await _tts.awaitSpeakCompletion(true);
+      await _tts.stop();
+      await _tts.speak("$intro $question");
+      await Future.delayed(const Duration(milliseconds: 250));
+      await _initAndStartListening();
+    } catch (_) {
+      await _initAndStartListening();
+    }
+  }
 
-      await TTSService.speak(intro, lang: 'en-US');
-      await TTSService.speak(prompt['question']!, lang: prompt['langCode']!);
+  Future<void> _initAndStartListening() async {
+    _available = await _stt.initialize(
+      onStatus: (s) {
+        if (s == 'done' && !_processing && _transcript.trim().isNotEmpty) {
+          _processTranscript();
+        }
+      },
+      onError: (e) {
+        if (!mounted) return;
+        final msg =
+            e.errorMsg == 'error_no_match'
+                ? 'Didn’t catch that. Try again, a bit closer to the mic.'
+                : 'Speech error: ${e.errorMsg}';
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(msg)));
+        setState(() => _listening = false);
+      },
+    );
+
+    if (!_available) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Speech recognition not available on this device.'),
+        ),
+      );
+      return;
     }
 
-    await _startListeningWithSilenceDetection();
+    final locales = await _stt.locales();
+    final system = await _stt.systemLocale();
+    final p = _langPrefix(_language).toLowerCase();
+
+    stt.LocaleName? pick;
+    for (final l in locales) {
+      final id = l.localeId.toLowerCase();
+      if (id.startsWith('${p}_') || id.startsWith('${p}-') || id == p) {
+        pick = l;
+        break;
+      }
+    }
+    _chosenLocale = pick ?? system;
+
+    await Future.delayed(const Duration(milliseconds: 150));
+    await _startListeningLong();
   }
 
-  Future<void> _startListeningWithSilenceDetection() async {
-    final dir = await getTemporaryDirectory();
-    final filePath = path.join(
-      dir.path,
-      'response_${DateTime.now().millisecondsSinceEpoch}.wav',
-    );
-
-    await _recorder.start(
-      const RecordConfig(encoder: AudioEncoder.wav, sampleRate: 16000),
-      path: filePath,
-    );
-
-    _hasStartedRecording = true;
-
-    _amplitudeSub = _recorder
-        .onAmplitudeChanged(const Duration(milliseconds: 300))
-        .listen((amp) async {
-          if (amp.current > -45) {
-            _silenceTimer?.cancel();
-            _silenceTimer = Timer(const Duration(seconds: 2), () async {
-              if (!_hasStartedRecording) return;
-
-              _hasStartedRecording = false;
-              final recordedPath = await _recorder.stop();
-              _amplitudeSub?.cancel();
-              if (recordedPath != null) {
-                await _processRecording(File(recordedPath));
-              } else {
-                setState(() {
-                  _isListening = false;
-                  _lessonPlan = 'Recording failed.';
-                  _showRetry = true;
-                });
-              }
-            });
-          }
-        });
-  }
-
-  Future<void> _processRecording(File file) async {
-    final transcript = await _transcribeAudio(file);
-    final plan = await _generateLessonPlan(transcript);
-
+  Future<void> _startListeningLong() async {
+    if (!_available || _listening) return;
     setState(() {
-      _isListening = false;
-      _lessonPlan = plan ?? 'No lesson plan returned.';
-      _showRetry = plan == null || plan.contains('Invalid');
+      _transcript = '';
+      _listening = true;
+      _savedOnce = false;
+      _navigated = false;
     });
 
-    if (plan != null && !plan.contains('Invalid')) {
-      final plainTextPlan = plan.replaceAll(RegExp(r'[\#\*\_\`]'), '');
-      await TTSService.speak(plainTextPlan, lang: 'en-US');
-    }
-
-    if (!_hasNavigated && mounted) {
-      _hasNavigated = true;
-      Navigator.pushNamed(
-        context,
-        '/lessonPlan',
-        arguments: {'lessonPlan': _lessonPlan},
-      );
-    }
-  }
-
-  Future<String> _transcribeAudio(File file) async {
-    try {
-      final request =
-          http.MultipartRequest(
-              'POST',
-              Uri.parse('https://api.openai.com/v1/audio/transcriptions'),
-            )
-            ..headers['Authorization'] =
-                'Bearer ${dotenv.env['OPENAI_API_KEY']}'
-            ..fields['model'] = 'whisper-1'
-            ..files.add(await http.MultipartFile.fromPath('file', file.path));
-
-      final response = await request.send();
-
-      if (response.statusCode != 200) return 'Transcription failed';
-
-      final res = await http.Response.fromStream(response);
-      final body = jsonDecode(res.body);
-      return body['text'] ?? 'No text found.';
-    } catch (e) {
-      print("❌ Transcription error: $e");
-      return 'Transcription error.';
-    }
-  }
-
-  Future<String?> _generateLessonPlan(String transcript) async {
-    try {
-      final response = await http.post(
-        Uri.parse('https://api.openai.com/v1/chat/completions'),
-        headers: {
-          'Authorization': 'Bearer ${dotenv.env['OPENAI_API_KEY']}',
-          'Content-Type': 'application/json',
-        },
-        body: jsonEncode({
-          "model": "gpt-4o",
-          "messages": [
-            {
-              "role": "system",
-              "content":
-                  "You are a language tutor. Assess the user's fluency level based on their spoken input in the target language: ${widget.selectedLanguage}. Then generate a personalized lesson plan that matches their level and helps them improve. The plan should include vocabulary, phrases, and examples in the target language to help the user begin practicing immediately.",
-            },
-            {"role": "user", "content": transcript},
-          ],
-        }),
-      );
-
-      print("🔵 Raw GPT response body: ${response.body}");
-
-      if (response.statusCode != 200) return 'GPT failed';
-
-      final jsonBody = jsonDecode(response.body);
-      final content = jsonBody['choices']?[0]?['message']?['content'];
-      return content?.trim() ?? 'Invalid GPT response.';
-    } catch (e) {
-      print("❌ GPT response parse error: $e");
-      return 'Invalid GPT response.';
-    }
-  }
-
-  Widget _buildListeningView() {
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        GestureDetector(
-          onTap: () async {
-            if (_hasStartedRecording) {
-              _hasStartedRecording = false;
-              final recordedPath = await _recorder.stop();
-              _amplitudeSub?.cancel();
-              if (recordedPath != null) {
-                await _processRecording(File(recordedPath));
-              }
-            }
-          },
-          child: const Column(
-            children: [
-              Icon(Icons.mic, size: 80, color: Colors.green),
-              SizedBox(height: 20),
-              Text(
-                "Gabi is listening...",
-                style: TextStyle(fontSize: 18, color: Colors.white),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildResultView() {
-    return SafeArea(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(20, 30, 20, 20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              _lessonPlan,
-              style: const TextStyle(fontSize: 16, color: Colors.white),
-            ),
-            if (_showRetry) ...[
-              const SizedBox(height: 20),
-              ElevatedButton(
-                onPressed: _startIntroAndAssessment,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.deepPurple[200],
-                ),
-                child: const Text(
-                  "Try Again",
-                  style: TextStyle(color: Colors.black),
-                ),
-              ),
-            ],
-          ],
-        ),
+    await _stt.listen(
+      onResult: _onSpeechResult,
+      listenFor: const Duration(minutes: 1),
+      pauseFor: const Duration(seconds: 5),
+      localeId: _chosenLocale?.localeId,
+      listenOptions: stt.SpeechListenOptions(
+        partialResults: true,
+        listenMode: stt.ListenMode.dictation,
       ),
     );
+
+    _safetyTimeout?.cancel();
+    _safetyTimeout = Timer(const Duration(minutes: 1, seconds: 5), () async {
+      if (_listening) await _stopListening();
+    });
+  }
+
+  Future<void> _stopListening() async {
+    if (!_listening) return;
+    _safetyTimeout?.cancel();
+    await _stt.stop();
+    if (!mounted) return;
+    setState(() => _listening = false);
+
+    if (_transcript.trim().isNotEmpty && !_processing) {
+      _processTranscript();
+    }
+  }
+
+  void _onSpeechResult(SpeechRecognitionResult result) {
+    setState(() => _transcript = result.recognizedWords);
+    if (result.finalResult) {
+      _stopListening();
+    }
+  }
+
+  Future<void> _processTranscript() async {
+    if (_processing || _savedOnce) return;
+    setState(() => _processing = true);
+
+    try {
+      final text = _transcript.trim();
+      if (text.isEmpty) throw Exception('No speech detected');
+
+      final planMd = await GabiService.generateLessonPlanFromTranscript(
+        transcript: text,
+        language: _language,
+      );
+
+      final id = await LessonPlanStorage.savePlan(
+        markdown: planMd,
+        language: _language,
+      );
+      _savedOnce = true;
+
+      if (!mounted || _navigated) return;
+      _navigated = true;
+      HapticFeedback.lightImpact();
+      Navigator.pushReplacementNamed(
+        context,
+        Routes.lessonPlan,
+        arguments: {
+          'lessonId': id,
+          'language': _language,
+          'ttsLocale': _ttsLocale,
+          'initialMarkdown': planMd,
+        },
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not create lesson plan: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _processing = false);
+    }
   }
 
   @override
   void dispose() {
-    _amplitudeSub?.cancel();
-    _silenceTimer?.cancel();
-    TTSService.stop();
+    _safetyTimeout?.cancel();
+    _stt.cancel();
+    _tts.stop();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final purple = const Color(0xFF7C3AED);
+    final statusText =
+        _processing
+            ? 'Generating lesson plan…'
+            : _listening
+            ? 'Listening… tap mic to stop'
+            : 'Tap mic to start';
+
     return Scaffold(
       backgroundColor: Colors.black,
+      appBar: AppBar(
+        title: const Text('Fluency Assessment'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.home),
+            onPressed:
+                () => Navigator.pushNamedAndRemoveUntil(
+                  context,
+                  Routes.home,
+                  (r) => false,
+                ),
+          ),
+        ],
+      ),
       body: Center(
-        child: _isListening ? _buildListeningView() : _buildResultView(),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(_language, style: const TextStyle(color: Colors.white70)),
+            const SizedBox(height: 24),
+            GestureDetector(
+              onTap:
+                  _processing
+                      ? null
+                      : () async {
+                        if (_listening) {
+                          await _stopListening();
+                        } else {
+                          await _startListeningLong();
+                        }
+                      },
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                height: 140,
+                width: 140,
+                decoration: BoxDecoration(
+                  color:
+                      _listening
+                          ? purple.withValues(alpha: 0.25)
+                          : const Color(0xFF1A1F29),
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    if (_listening)
+                      BoxShadow(
+                        color: purple.withValues(alpha: 0.4),
+                        blurRadius: 24,
+                        spreadRadius: 4,
+                      ),
+                  ],
+                ),
+                child: Icon(
+                  _listening ? Icons.mic : Icons.mic_none,
+                  size: 64,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              statusText,
+              style: const TextStyle(color: Colors.white, fontSize: 16),
+            ),
+            if (_transcript.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: Text(
+                  _transcript,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: Colors.white70),
+                ),
+              ),
+            ],
+            if (_processing) ...[
+              const SizedBox(height: 14),
+              const CircularProgressIndicator(),
+            ],
+          ],
+        ),
       ),
     );
   }

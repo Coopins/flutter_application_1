@@ -3,7 +3,7 @@
 import 'package:flutter/material.dart';
 
 class FlashcardsScreen extends StatelessWidget {
-  const FlashcardsScreen({Key? key}) : super(key: key);
+  const FlashcardsScreen({super.key});
 
   @override
   Widget build(BuildContext context) {

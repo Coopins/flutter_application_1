@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 class CreateAccountScreen extends StatelessWidget {
-  const CreateAccountScreen({Key? key}) : super(key: key);
+  const CreateAccountScreen({super.key});
 
   Widget _buildBtn(
     BuildContext ctx,

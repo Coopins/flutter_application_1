@@ -1,26 +1,91 @@
-# Flutter/Dart/Pub related
+# -----------------------------
+# General / OS junk
+# -----------------------------
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.build/
+.buildlog/
+.history
+.svn/
+.swiftpm/
+migrate_working_dir/
+
+# -----------------------------
+# Environment files (do not commit secrets)
+# -----------------------------
+.env
+*.env
+!.env.sample
+
+# -----------------------------
+# IDE / Project files
+# -----------------------------
+*.iml
+*.ipr
+*.iws
+.idea/
+# Keep .vscode by default; uncomment to ignore the whole folder
+# .vscode/
+
+# -----------------------------
+# Flutter / Dart / Pub
+# -----------------------------
+**/doc/api/
+**/ios/Flutter/.last_build_id
 .dart_tool/
-.packages
 .flutter-plugins
 .flutter-plugins-dependencies
 .pub-cache/
 .pub/
+.build/
 build/
-*.lock
+coverage/
 
-# Android/iOS
+# -----------------------------
+# Android
+# -----------------------------
+/android/app/debug
+/android/app/profile
+/android/app/release
 android/.gradle/
-ios/Pods/
+**/.gradle/
+
+# Firebase Android config (secret)
+/android/app/google-services.json
+
+# -----------------------------
+# iOS
+# -----------------------------
+ios/.generated/
 ios/.symlinks/
-macos/Pods/
+ios/Flutter/ephemeral/
+ios/Flutter/Generated.xcconfig
+**/xcuserdata/
+**/*.xcuserstate
+
+# Firebase iOS config (secret)
+ios/Runner/GoogleService-Info.plist
+
+# -----------------------------
+# macOS
+# -----------------------------
+macos/.generated/
 macos/.symlinks/
-*.xcworkspace
-*.xcuserstate
+macos/Flutter/ephemeral/
+**/xcuserdata/
+**/*.xcuserstate
 
-# IDEs
-.idea/
-.vscode/
-*.iml
+# -----------------------------
+# Windows / Linux (build handled by /build ignore)
+# -----------------------------
+# (no extra ignores needed)
 
-# Secrets
-.env
+# -----------------------------
+# Symbolication / Obfuscation
+# -----------------------------
+app.*.symbols
+app.*.map.json
