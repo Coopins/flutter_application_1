@@ -5,7 +5,7 @@ publish_to: "none"
 version: 1.0.0+1
 
 environment:
-  sdk: ">=3.5.0 <4.0.0" # relaxed so GitHub Actions (Flutter stable) can run pub get
+  sdk: ">=3.5.0 <4.0.0" # CI-friendly range (Flutter stable on GitHub)
 
 dependencies:
   flutter:
@@ -45,4 +45,5 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
-    - .env
+    # Use an env/ folder. Commit only env/.env.example (no secrets).
+    - env/

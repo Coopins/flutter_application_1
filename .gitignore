@@ -17,9 +17,16 @@ migrate_working_dir/
 # -----------------------------
 # Environment files (do not commit secrets)
 # -----------------------------
+# Root .env patterns
 .env
+.env.*
 *.env
-!.env.sample
+!.env.sample            # allow a sample at root if you ever add one
+
+# Env folder: keep real secrets out of git, allow example file
+env/.env
+env/.env.*
+!env/.env.example
 
 # -----------------------------
 # IDE / Project files
@@ -55,7 +62,7 @@ android/.gradle/
 **/.gradle/
 
 # Firebase Android config (secret)
-/android/app/google-services.json
+android/app/google-services.json
 
 # -----------------------------
 # iOS
