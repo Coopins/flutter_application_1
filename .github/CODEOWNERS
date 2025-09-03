@@ -1,0 +1,5 @@
+/android/gradle/wrapper/gradle-wrapper.properties  @Coopins
+/android/build.gradle                              @Coopins
+/android/app/build.gradle                          @Coopins
+/pubspec.yaml                                      @Coopins
+/.github/workflows/ci.yml                          @Coopins
