@@ -51,7 +51,7 @@ class DefaultFirebaseOptions {
 
   static const FirebaseOptions android = FirebaseOptions(
     apiKey: 'AIzaSyDSOEROTaRJEuULmnFiDefuSK5bFx9pcWk',
-    appId: '1:111226432033:android:7a8df75f4940f02780d160',
+    appId: '1:111226432033:android:8e9fc2d442f8c74980d160',
     messagingSenderId: '111226432033',
     projectId: 'gab-and-go',
     storageBucket: 'gab-and-go.firebasestorage.app',

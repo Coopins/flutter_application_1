@@ -13,30 +13,33 @@ dependencies:
 
   cupertino_icons: ^1.0.8
 
-  # Core
-  firebase_core: any
-  firebase_auth: any
-  cloud_firestore: any
+  # --- Firebase ---
+  firebase_core: ^3.5.0
+  firebase_auth: ^5.2.0
+  cloud_firestore: ^5.4.2
 
-  # Speech & audio
-  speech_to_text: any
-  flutter_tts: any
-  record: any
-  permission_handler: any
+  # --- Speech to Text (stable, Android v2 embedding) ---
+  speech_to_text: ^7.2.0
+  permission_handler: ^11.3.1
 
-  # UI/markdown
-  flutter_markdown: any
+  # --- Recording (optional; keep if you need file capture) ---
+  record: ^6.1.1
 
-  # Utils
-  http: any
-  path_provider: any
-  path: any
-  flutter_dotenv: any
+  # --- Text-to-Speech ---
+  flutter_tts: ^3.8.3
+
+  # --- UI / Markdown ---
+  flutter_markdown: ^0.7.3+1
+
+  # --- Utils ---
+  http: ^1.2.2
+  path_provider: ^2.1.4
+  path: ^1.9.0
+  flutter_dotenv: ^5.1.0
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  # Keep v5 to avoid the Flutter SDK bump suggestion
   flutter_lints: ^5.0.0
 
 flutter:
