@@ -1,0 +1,22 @@
+name: CI (Flutter)
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [clean-foundation]
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - name: Flutter version
+        run: flutter --version
+      - name: Pub get
+        run: flutter pub get
+      - name: Analyze
+        run: flutter analyze
