@@ -1,9 +1,11 @@
 import 'dart:async';
-import 'package:firebase_core/firebase_core.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
+
+import 'package:flutter_dotenv/flutter_dotenv.dart' as fdotenv;
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 import 'firebase_options.dart';
 import 'routes.dart';
@@ -22,23 +24,30 @@ import 'screens/settings_screen.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Load .env (best-effort)
+  // Lock device orientation to portrait (optional, done before runApp).
+  await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+
+  // Load env with a safe fallback (no secrets in CI).
   try {
-    await dotenv.load(fileName: '.env');
+    await fdotenv.dotenv.load(fileName: 'env/.env'); // local, git-ignored
   } catch (_) {
-    // ignore if missing in dev
+    await fdotenv.dotenv.load(fileName: 'env/.env.example'); // CI fallback
   }
 
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-
-  // BYPASS_AUTH from --dart-define (accepts true/1/t, case-insensitive)
-  const String bypassStr = String.fromEnvironment(
-    'BYPASS_AUTH',
-    defaultValue: 'false',
+  // Firebase init
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
   );
-  final bool bypass =
-      const {'true': true, '1': true, 't': true, 'yes': true}[bypassStr
-          .toLowerCase()] ??
+
+  // BYPASS_AUTH from --dart-define (accepts true/1/t/yes; case-insensitive)
+  const String bypassStr =
+      String.fromEnvironment('BYPASS_AUTH', defaultValue: 'false');
+  final bool bypass = const {
+        'true': true,
+        '1': true,
+        't': true,
+        'yes': true,
+      }[bypassStr.toLowerCase()] ??
       false;
 
   if (bypass) {
@@ -48,13 +57,10 @@ Future<void> main() async {
     }
   }
 
-  // Log a one-liner so we can see auth state at launch.
+  // CI-safe one-liner to see auth state at launch (no raw print).
   final u = FirebaseAuth.instance.currentUser;
-  // ignore: avoid_print
-  print(
-    'Auth at start -> uid=${u?.uid ?? "(none)"}'
-    ', anon=${u?.isAnonymous == true}'
-    ', bypass=$bypass',
+  debugPrint(
+    'Auth at start -> uid=${u?.uid ?? "(none)"} anon=${u?.isAnonymous == true} bypass=$bypass',
   );
 
   // Choose starting route
@@ -85,9 +91,6 @@ class GabAndGoApp extends StatelessWidget {
       useMaterial3: true,
     );
 
-    // Lock device orientation to portrait (optional)
-    SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
-
     return MaterialApp(
       title: 'Gab & Go',
       debugShowCheckedModeBanner: false,
@@ -105,11 +108,10 @@ class GabAndGoApp extends StatelessWidget {
         Routes.settings: (_) => const SettingsScreen(),
       },
       // Fallback for unknown routes
-      onUnknownRoute:
-          (_) => MaterialPageRoute(
-            builder: (_) => const HomeScreen(),
-            settings: const RouteSettings(name: Routes.home),
-          ),
+      onUnknownRoute: (_) => MaterialPageRoute(
+        builder: (_) => const HomeScreen(),
+        settings: const RouteSettings(name: Routes.home),
+      ),
     );
   }
 }
