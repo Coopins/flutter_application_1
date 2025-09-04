@@ -1,7 +1,9 @@
 // lib/screens/home_screen.dart
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_application_1/routes.dart';
+import 'package:flutter_application_1/services/lesson_plan_storage.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -55,10 +57,47 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
+  /// Debug-only Firestore smoke test: creates a sample lesson plan and shows the new doc ID.
+  Future<void> _debugSavePlanSmoke(BuildContext context) async {
+    try {
+      final id = await LessonPlanStorage.savePlan(
+        markdown: '# Test Plan\n\nHello world.',
+        language: 'Spanish',
+        ttsLocale: 'es-ES',
+      );
+      HapticFeedback.lightImpact();
+      // ignore: use_build_context_synchronously
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Saved test plan with id: $id'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (e) {
+      // ignore: use_build_context_synchronously
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error saving test plan: $e'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
+
+      // Floating debug button only visible in debug/profile builds.
+      floatingActionButton: kDebugMode
+          ? FloatingActionButton.extended(
+              onPressed: () => _debugSavePlanSmoke(context),
+              icon: const Icon(Icons.bug_report),
+              label: const Text('Debug Save Plan'),
+            )
+          : null,
+
       body: SafeArea(
         child: Column(
           children: [
@@ -73,7 +112,6 @@ class HomeScreen extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 48),
-
             Row(
               children: [
                 _tile(
@@ -86,7 +124,6 @@ class HomeScreen extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 32),
-
             Row(
               children: [
                 _tile(
@@ -104,7 +141,6 @@ class HomeScreen extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 32),
-
             Row(
               children: [
                 _tile(
@@ -122,13 +158,12 @@ class HomeScreen extends StatelessWidget {
                 ),
               ],
             ),
-
             const Spacer(),
           ],
         ),
       ),
 
-      // Bottom bar moved here so it's always safe-area aware.
+      // Bottom bar stays safe-area aware.
       bottomNavigationBar: SafeArea(
         top: false,
         child: Material(
@@ -140,14 +175,13 @@ class HomeScreen extends StatelessWidget {
               children: [
                 IconButton(
                   tooltip: 'Home',
-                  onPressed:
-                      () => Navigator.popUntil(context, (r) => r.isFirst),
+                  onPressed: () =>
+                      Navigator.popUntil(context, (r) => r.isFirst),
                   icon: const Icon(Icons.home, size: 28, color: Colors.black),
                 ),
                 IconButton(
                   tooltip: 'Search',
                   onPressed: () {
-                    // Placeholder – wire to a search screen when ready
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(content: Text('Search coming soon')),
                     );

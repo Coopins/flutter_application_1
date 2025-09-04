@@ -1,3 +1,4 @@
+// lib/main.dart
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -22,47 +23,56 @@ import 'screens/profile_screen.dart';
 import 'screens/settings_screen.dart';
 
 Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
+  // Keep all app startup inside a zone for safer error handling
+  runZonedGuarded<Future<void>>(() async {
+    WidgetsFlutterBinding.ensureInitialized();
 
-  // Lock device orientation to portrait (optional).
-  await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+    // Lock device orientation to portrait (optional).
+    await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
 
-  // 🔒 Load your real local env (no fallback). This will throw if missing.
-  await fdotenv.dotenv.load(fileName: 'env/.env');
+    // Load env (no fallback). Throws if missing so we don't run with bad config.
+    await fdotenv.dotenv.load(fileName: 'env/.env');
 
-  // Firebase init
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+    // Firebase init from FlutterFire CLI generated options.
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
 
-  // BYPASS_AUTH from --dart-define (accepts true/1/t/yes; case-insensitive)
-  const String bypassStr =
-      String.fromEnvironment('BYPASS_AUTH', defaultValue: 'false');
-  final bool bypass = const {
-        'true': true,
-        '1': true,
-        't': true,
-        'yes': true,
-      }[bypassStr.toLowerCase()] ??
-      false;
+    // BYPASS_AUTH from --dart-define (true/1/t/yes case-insensitive).
+    const String bypassStr =
+        String.fromEnvironment('BYPASS_AUTH', defaultValue: 'false');
+    final bool bypass = const {
+          'true': true,
+          '1': true,
+          't': true,
+          'yes': true,
+        }[bypassStr.toLowerCase()] ??
+        false;
 
-  if (bypass) {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null || !user.isAnonymous) {
-      await FirebaseAuth.instance.signInAnonymously();
+    if (bypass) {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null || !user.isAnonymous) {
+        await FirebaseAuth.instance.signInAnonymously();
+      }
     }
-  }
 
-  // One-liner to see auth state at launch.
-  final u = FirebaseAuth.instance.currentUser;
-  debugPrint(
-    'Auth at start -> uid=${u?.uid ?? "(none)"} anon=${u?.isAnonymous == true} bypass=$bypass',
-  );
+    // Quick visibility on auth state at launch.
+    final u = FirebaseAuth.instance.currentUser;
+    debugPrint(
+      'Auth at start -> uid=${u?.uid ?? "(none)"} anon=${u?.isAnonymous == true} bypass=$bypass',
+    );
 
-  // Choose starting route
-  final String initialRoute = bypass ? Routes.languageSelection : Routes.main;
+    // Choose starting route
+    final String initialRoute = bypass ? Routes.languageSelection : Routes.main;
 
-  runApp(GabAndGoApp(initialRoute: initialRoute));
+    runApp(GabAndGoApp(initialRoute: initialRoute));
+  }, (error, stack) {
+    // Last-resort catch for any uncaught startup/runtime errors
+    // (Crashlytics/Sentry can be wired here later if you add them)
+    // For now, log to console for visibility.
+    // ignore: avoid_print
+    print('Uncaught zone error: $error\n$stack');
+  });
 }
 
 class GabAndGoApp extends StatelessWidget {

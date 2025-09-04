@@ -1,8 +1,9 @@
-// lib/screens/auth/sign_in_screen.dart
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_application_1/routes.dart';
+import 'package:flutter_application_1/services/auth_service.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class SignInScreen extends StatefulWidget {
   const SignInScreen({super.key});
@@ -13,256 +14,248 @@ class SignInScreen extends StatefulWidget {
 
 class _SignInScreenState extends State<SignInScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _emailCtl = TextEditingController();
-  final _passwordCtl = TextEditingController();
+  final _emailCtrl = TextEditingController();
+  final _pwCtrl = TextEditingController();
 
+  bool _obscure = true;
   bool _loading = false;
-  String? _banner; // top error/info banner text
 
   @override
   void dispose() {
-    _emailCtl.dispose();
-    _passwordCtl.dispose();
+    _emailCtrl.dispose();
+    _pwCtrl.dispose();
     super.dispose();
   }
 
-  InputDecoration _dec(String hint) => InputDecoration(
-    hintText: hint,
-    hintStyle: const TextStyle(color: Colors.black54),
-    filled: true,
-    fillColor: Colors.white,
-    border: OutlineInputBorder(
-      borderSide: BorderSide.none,
-      borderRadius: BorderRadius.circular(12),
-    ),
-    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-  );
-
-  String _friendly(FirebaseAuthException e) {
-    switch (e.code) {
-      case 'invalid-email':
-        return 'That email address looks invalid.';
-      case 'user-disabled':
-        return 'This account has been disabled.';
-      case 'user-not-found':
-        return 'No account found for that email.';
-      case 'wrong-password':
-        return 'Incorrect password. Try again.';
-      case 'too-many-requests':
-        return 'Too many attempts. Please wait a moment.';
-      default:
-        return e.message ?? 'Sign-in failed. Try again.';
-    }
+  String? _vEmail(String? v) {
+    final s = (v ?? '').trim();
+    if (s.isEmpty) return 'Email is required';
+    final ok = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(s);
+    if (!ok) return 'Enter a valid email';
+    return null;
   }
 
-  Future<void> _signIn() async {
-    if (!(_formKey.currentState?.validate() ?? false)) return;
+  String? _vPw(String? v) {
+    final s = (v ?? '');
+    if (s.isEmpty) return 'Password is required';
+    return null;
+  }
 
-    setState(() {
-      _loading = true;
-      _banner = null;
-    });
+  Future<void> _submit() async {
+    if (_loading) return;
+    FocusScope.of(context).unfocus();
+    if (!_formKey.currentState!.validate()) return;
 
-    // Capture navigator/messenger before awaits to avoid context lint.
-    final navigator = Navigator.of(context);
+    setState(() => _loading = true);
+    HapticFeedback.selectionClick();
 
     try {
-      await FirebaseAuth.instance.signInWithEmailAndPassword(
-        email: _emailCtl.text.trim(),
-        password: _passwordCtl.text,
+      await AuthService.signIn(
+        email: _emailCtrl.text,
+        password: _pwCtrl.text,
       );
-      HapticFeedback.lightImpact();
-      navigator.pushNamedAndRemoveUntil(Routes.home, (r) => false);
-    } on FirebaseAuthException catch (e) {
-      setState(() => _banner = _friendly(e));
-    } catch (_) {
-      setState(() => _banner = 'Something went wrong. Please try again.');
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Signed in!')),
+      );
+      Navigator.pushNamedAndRemoveUntil(
+        context,
+        Routes.languageSelection,
+        (r) => false,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      final msg = AuthService.explain(e);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(msg)),
+      );
     } finally {
       if (mounted) setState(() => _loading = false);
     }
   }
 
   Future<void> _forgotPassword() async {
-    final email = _emailCtl.text.trim();
+    final email = _emailCtrl.text.trim();
     if (email.isEmpty) {
-      setState(() => _banner = 'Enter your email to reset your password.');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Enter your email first')),
+      );
       return;
     }
-
-    setState(() => _banner = null);
-    final messenger = ScaffoldMessenger.of(context);
-
     try {
-      await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
-      messenger.showSnackBar(
-        const SnackBar(content: Text('Password reset email sent.')),
+      await AuthService.sendPasswordResetEmail(email);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Password reset email sent')),
       );
-    } on FirebaseAuthException catch (e) {
-      setState(() => _banner = _friendly(e));
-    } catch (_) {
-      setState(() => _banner = 'Could not send reset email. Try again.');
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(AuthService.explain(e))),
+      );
+    }
+  }
+
+  /// Dev convenience: anonymous sign-in button only in debug/profile builds.
+  Future<void> _devAnonSignIn() async {
+    try {
+      final cred = await FirebaseAuth.instance.signInAnonymously();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Signed in anonymously: ${cred.user?.uid}')),
+      );
+      Navigator.pushNamedAndRemoveUntil(
+        context,
+        Routes.languageSelection,
+        (r) => false,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Anon sign-in failed: $e')),
+      );
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    const purple = Color(0xFF7C3AED);
+    final purple = const Color(0xFF7C3AED);
 
     return Scaffold(
+      appBar: AppBar(title: const Text('Sign In')),
       backgroundColor: Colors.black,
-      appBar: AppBar(
-        title: const Text('Log In'),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          tooltip: 'Back to main',
-          onPressed: () {
-            // Return to the marketing/landing screen
-            Navigator.of(
-              context,
-            ).pushNamedAndRemoveUntil(Routes.main, (r) => false);
-          },
-        ),
-        actions: const [],
-      ),
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 540),
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  children: [
-                    if (_banner != null) ...[
-                      Container(
-                        width: double.infinity,
-                        margin: const EdgeInsets.only(bottom: 16),
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: const Color(
-                            0xFFB00020,
-                          ).withValues(alpha: 0.18),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: const Color(
-                              0xFFB00020,
-                            ).withValues(alpha: 0.9),
-                            width: 1,
+          padding: const EdgeInsets.all(20),
+          child: AutofillGroup(
+            child: Form(
+              key: _formKey,
+              child: Column(
+                children: [
+                  _LabeledField(
+                    label: 'Email',
+                    child: TextFormField(
+                      controller: _emailCtrl,
+                      keyboardType: TextInputType.emailAddress,
+                      autofillHints: const [
+                        AutofillHints.username,
+                        AutofillHints.email
+                      ],
+                      textInputAction: TextInputAction.next,
+                      validator: _vEmail,
+                      decoration:
+                          const InputDecoration(hintText: 'you@example.com'),
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  _LabeledField(
+                    label: 'Password',
+                    child: TextFormField(
+                      controller: _pwCtrl,
+                      obscureText: _obscure,
+                      autofillHints: const [AutofillHints.password],
+                      validator: _vPw,
+                      decoration: InputDecoration(
+                        hintText: '••••••••',
+                        suffixIcon: IconButton(
+                          icon: Icon(
+                            _obscure ? Icons.visibility : Icons.visibility_off,
+                            color: Colors.white70,
                           ),
+                          onPressed: () => setState(() => _obscure = !_obscure),
                         ),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Padding(
-                              padding: EdgeInsets.only(top: 2),
-                              child: Icon(
-                                Icons.error_outline,
-                                color: Colors.redAccent,
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Text(
-                                _banner!,
-                                style: const TextStyle(
-                                  color: Colors.redAccent,
-                                  fontSize: 14,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
+                      ),
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: _loading ? null : _submit,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: purple,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
+                      child: _loading
+                          ? const SizedBox(
+                              height: 20,
+                              width: 20,
+                              child: CircularProgressIndicator(
+                                  strokeWidth: 2, color: Colors.white),
+                            )
+                          : const Text('Sign In',
+                              style: TextStyle(fontSize: 16)),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      TextButton(
+                        onPressed: _forgotPassword,
+                        child: const Text('Forgot password?'),
+                      ),
+                      const Spacer(),
+                      TextButton(
+                        onPressed: () {
+                          HapticFeedback.selectionClick();
+                          Navigator.pushReplacementNamed(
+                              context, Routes.createAccountForm);
+                        },
+                        child: const Text('Create account'),
                       ),
                     ],
-
-                    // Email
-                    TextFormField(
-                      controller: _emailCtl,
-                      keyboardType: TextInputType.emailAddress,
-                      autofillHints: const [AutofillHints.email],
-                      textInputAction: TextInputAction.next,
-                      style: const TextStyle(color: Colors.black87),
-                      decoration: _dec('Email address'),
-                      validator: (v) {
-                        final t = (v ?? '').trim();
-                        if (t.isEmpty) return 'Email is required';
-                        final ok = RegExp(r'^[^@]+@[^@]+\.[^@]+$').hasMatch(t);
-                        return ok ? null : 'Enter a valid email';
-                      },
-                    ),
-                    const SizedBox(height: 14),
-
-                    // Password
-                    TextFormField(
-                      controller: _passwordCtl,
-                      obscureText: true,
-                      autofillHints: const [AutofillHints.password],
-                      textInputAction: TextInputAction.done,
-                      style: const TextStyle(color: Colors.black87),
-                      decoration: _dec('Password'),
-                      validator: (v) {
-                        if (v == null || v.isEmpty)
-                          return 'Password is required';
-                        if (v.length < 6) return 'Min 6 characters';
-                        return null;
-                      },
-                      onFieldSubmitted: (_) => _signIn(),
-                    ),
-
-                    const SizedBox(height: 8),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: TextButton(
-                        onPressed: _loading ? null : _forgotPassword,
-                        child: const Text(
-                          'Forgot password?',
-                          style: TextStyle(
-                            color: purple,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    ),
-
-                    const SizedBox(height: 8),
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton(
-                        onPressed: _loading ? null : _signIn,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.white,
-                          foregroundColor: Colors.black,
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(28),
-                          ),
-                        ),
-                        child:
-                            _loading
-                                ? const SizedBox(
-                                  width: 20,
-                                  height: 20,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                                : const Text(
-                                  'Log In',
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                      ),
+                  ),
+                  if (kDebugMode) ...[
+                    const SizedBox(height: 16),
+                    OutlinedButton.icon(
+                      onPressed: _devAnonSignIn,
+                      icon: const Icon(Icons.bug_report),
+                      label: const Text('Dev: Sign in Anonymously'),
                     ),
                   ],
-                ),
+                ],
               ),
             ),
           ),
         ),
       ),
+    );
+  }
+}
+
+class _LabeledField extends StatelessWidget {
+  final String label;
+  final Widget child;
+  const _LabeledField({required this.label, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label,
+            style: const TextStyle(
+                color: Colors.white70, fontWeight: FontWeight.w600)),
+        const SizedBox(height: 6),
+        Theme(
+          data: Theme.of(context).copyWith(
+            inputDecorationTheme: InputDecorationTheme(
+              filled: true,
+              fillColor: const Color(0xFF1A1F29),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide.none,
+              ),
+              hintStyle: const TextStyle(color: Colors.white38),
+            ),
+          ),
+          child: child,
+        ),
+      ],
     );
   }
 }

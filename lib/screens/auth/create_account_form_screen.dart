@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_application_1/routes.dart';
+import 'package:flutter_application_1/services/auth_service.dart';
+import 'package:flutter_application_1/services/user_profile_service.dart';
 
 class CreateAccountFormScreen extends StatefulWidget {
   const CreateAccountFormScreen({super.key});
@@ -14,295 +15,248 @@ class CreateAccountFormScreen extends StatefulWidget {
 class _CreateAccountFormScreenState extends State<CreateAccountFormScreen> {
   final _formKey = GlobalKey<FormState>();
 
-  final _firstNameCtl = TextEditingController();
-  final _lastNameCtl = TextEditingController();
-  final _phoneCtl = TextEditingController();
-  final _emailCtl = TextEditingController();
-  final _passwordCtl = TextEditingController();
-  final _confirmCtl = TextEditingController();
+  final _nameCtrl = TextEditingController();
+  final _phoneCtrl = TextEditingController();
+  final _emailCtrl = TextEditingController();
+  final _pwCtrl = TextEditingController();
+  final _pw2Ctrl = TextEditingController();
 
+  bool _obscure = true;
   bool _loading = false;
-  String? _error;
 
   @override
   void dispose() {
-    _firstNameCtl.dispose();
-    _lastNameCtl.dispose();
-    _phoneCtl.dispose();
-    _emailCtl.dispose();
-    _passwordCtl.dispose();
-    _confirmCtl.dispose();
+    _nameCtrl.dispose();
+    _phoneCtrl.dispose();
+    _emailCtrl.dispose();
+    _pwCtrl.dispose();
+    _pw2Ctrl.dispose();
     super.dispose();
   }
 
-  Future<void> _handleSignup() async {
-    if (!(_formKey.currentState?.validate() ?? false)) return;
+  String? _vEmail(String? v) {
+    final s = (v ?? '').trim();
+    if (s.isEmpty) return 'Email is required';
+    final ok = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(s);
+    if (!ok) return 'Enter a valid email';
+    return null;
+  }
 
-    setState(() {
-      _error = null;
-      _loading = true;
-    });
+  String? _vPw(String? v) {
+    final s = (v ?? '');
+    if (s.length < 6) return 'Minimum 6 characters';
+    return null;
+  }
 
-    final firstName = _firstNameCtl.text.trim();
-    final lastName = _lastNameCtl.text.trim();
-    final phone = _phoneCtl.text.trim();
-    final email = _emailCtl.text.trim();
-    final password = _passwordCtl.text;
+  String? _vPw2(String? v) {
+    if (v != _pwCtrl.text) return 'Passwords do not match';
+    return null;
+  }
+
+  Future<void> _submit() async {
+    if (_loading) return;
+    FocusScope.of(context).unfocus();
+
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() => _loading = true);
+    HapticFeedback.selectionClick();
 
     try {
-      final cred = await FirebaseAuth.instance.createUserWithEmailAndPassword(
-        email: email,
-        password: password,
+      // Create account
+      await AuthService.createAccount(
+        email: _emailCtrl.text,
+        password: _pwCtrl.text,
+        displayName: _nameCtrl.text,
       );
-      final user = cred.user;
-      if (user == null) {
-        throw FirebaseAuthException(
-          code: 'unknown',
-          message: 'User not returned by Firebase.',
-        );
-      }
 
-      final displayName = '$firstName $lastName'.trim();
-      try {
-        await user.updateDisplayName(displayName);
-      } catch (_) {}
+      // Save profile fields in Firestore
+      await UserProfileService.createOrUpdateProfile(
+        displayName: _nameCtrl.text,
+        phoneNumber: _phoneCtrl.text,
+      );
 
-      await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
-        'firstName': firstName,
-        'lastName': lastName,
-        'displayName': displayName,
-        'phoneNumber': phone,
-        'email': email,
-        'provider': 'password',
-        'createdAt': FieldValue.serverTimestamp(),
-        'lastActive': FieldValue.serverTimestamp(),
-        'onboardingComplete': false,
-      }, SetOptions(merge: true));
-
+      // Success → navigate
       if (!mounted) return;
-
-      // go to language selection
-      Navigator.of(
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Account created!')),
+      );
+      Navigator.pushNamedAndRemoveUntil(
         context,
-      ).pushNamedAndRemoveUntil(Routes.languageSelection, (route) => false);
-    } on FirebaseAuthException catch (e) {
-      setState(() {
-        _error = _friendlyAuthError(e);
-      });
-    } catch (_) {
-      setState(() {
-        _error = 'Something went wrong. Please try again.';
-      });
+        Routes.languageSelection,
+        (r) => false,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      final msg = AuthService.explain(e);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(msg)),
+      );
     } finally {
-      if (mounted) {
-        setState(() {
-          _loading = false;
-        });
-      }
+      if (mounted) setState(() => _loading = false);
     }
   }
-
-  String _friendlyAuthError(FirebaseAuthException e) {
-    switch (e.code) {
-      case 'email-already-in-use':
-        return 'That email is already in use.';
-      case 'invalid-email':
-        return 'Please enter a valid email address.';
-      case 'weak-password':
-        return 'Password is too weak (use at least 6 characters).';
-      case 'operation-not-allowed':
-        return 'Email/password accounts are disabled for this project.';
-      default:
-        return e.message ?? 'Authentication error.';
-    }
-  }
-
-  InputDecoration _dec(String hint) => InputDecoration(
-    hintText: hint,
-    hintStyle: const TextStyle(color: Colors.black54),
-    filled: true,
-    fillColor: Colors.white,
-    border: OutlineInputBorder(
-      borderSide: BorderSide.none,
-      borderRadius: BorderRadius.circular(8),
-    ),
-    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-  );
 
   @override
   Widget build(BuildContext context) {
+    final purple = const Color(0xFF7C3AED);
+
     return Scaffold(
+      appBar: AppBar(title: const Text('Create Account')),
       backgroundColor: Colors.black,
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 20),
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 540),
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  children: [
-                    const SizedBox(height: 32),
-                    const Text(
-                      'Create an account',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold,
+          padding: const EdgeInsets.all(20),
+          child: AutofillGroup(
+            child: Form(
+              key: _formKey,
+              child: Column(
+                children: [
+                  _LabeledField(
+                    label: 'Name',
+                    child: TextFormField(
+                      controller: _nameCtrl,
+                      autofillHints: const [AutofillHints.name],
+                      textInputAction: TextInputAction.next,
+                      decoration: const InputDecoration(
+                        hintText: 'Your name',
                       ),
+                      style: const TextStyle(color: Colors.white),
                     ),
-                    const SizedBox(height: 24),
-                    TextFormField(
-                      controller: _firstNameCtl,
-                      textInputAction: TextInputAction.next,
-                      autofillHints: const [AutofillHints.givenName],
-                      decoration: _dec('First name*'),
-                      validator:
-                          (v) =>
-                              (v == null || v.trim().isEmpty)
-                                  ? 'Required'
-                                  : null,
-                    ),
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      controller: _lastNameCtl,
-                      textInputAction: TextInputAction.next,
-                      autofillHints: const [AutofillHints.familyName],
-                      decoration: _dec('Last name*'),
-                      validator:
-                          (v) =>
-                              (v == null || v.trim().isEmpty)
-                                  ? 'Required'
-                                  : null,
-                    ),
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      controller: _phoneCtl,
+                  ),
+                  const SizedBox(height: 12),
+                  _LabeledField(
+                    label: 'Phone (optional)',
+                    child: TextFormField(
+                      controller: _phoneCtrl,
                       keyboardType: TextInputType.phone,
-                      textInputAction: TextInputAction.next,
                       autofillHints: const [AutofillHints.telephoneNumber],
-                      decoration: _dec('Phone number*'),
-                      validator:
-                          (v) =>
-                              (v == null || v.trim().isEmpty)
-                                  ? 'Required'
-                                  : null,
+                      textInputAction: TextInputAction.next,
+                      decoration: const InputDecoration(
+                        hintText: '555-123-4567',
+                      ),
+                      style: const TextStyle(color: Colors.white),
                     ),
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      controller: _emailCtl,
+                  ),
+                  const SizedBox(height: 12),
+                  _LabeledField(
+                    label: 'Email',
+                    child: TextFormField(
+                      controller: _emailCtrl,
                       keyboardType: TextInputType.emailAddress,
-                      textInputAction: TextInputAction.next,
                       autofillHints: const [AutofillHints.email],
-                      decoration: _dec('Email address*'),
-                      validator: (v) {
-                        final t = (v ?? '').trim();
-                        if (t.isEmpty) return 'Required';
-                        final ok = RegExp(r'^[^@]+@[^@]+\.[^@]+$').hasMatch(t);
-                        return ok ? null : 'Enter a valid email';
-                      },
-                    ),
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      controller: _passwordCtl,
-                      obscureText: true,
                       textInputAction: TextInputAction.next,
+                      validator: _vEmail,
+                      decoration: const InputDecoration(
+                        hintText: 'you@example.com',
+                      ),
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  _LabeledField(
+                    label: 'Password',
+                    child: TextFormField(
+                      controller: _pwCtrl,
+                      obscureText: _obscure,
                       autofillHints: const [AutofillHints.newPassword],
-                      decoration: _dec('Password*'),
-                      validator: (v) {
-                        if (v == null || v.isEmpty) return 'Required';
-                        if (v.length < 6) return 'Min 6 characters';
-                        return null;
-                      },
-                    ),
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      controller: _confirmCtl,
-                      obscureText: true,
-                      textInputAction: TextInputAction.done,
-                      decoration: _dec('Confirm password*'),
-                      validator:
-                          (v) =>
-                              v == _passwordCtl.text
-                                  ? null
-                                  : 'Passwords don’t match',
-                    ),
-                    if (_error != null)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 12, bottom: 8),
-                        child: Text(
-                          _error!,
-                          style: const TextStyle(color: Colors.red),
+                      textInputAction: TextInputAction.next,
+                      validator: _vPw,
+                      decoration: InputDecoration(
+                        hintText: '••••••••',
+                        suffixIcon: IconButton(
+                          icon: Icon(
+                            _obscure ? Icons.visibility : Icons.visibility_off,
+                            color: Colors.white70,
+                          ),
+                          onPressed: () => setState(() => _obscure = !_obscure),
                         ),
                       ),
-                    const SizedBox(height: 16),
-                    SizedBox(
-                      width: 200,
-                      child: ElevatedButton(
-                        onPressed: _loading ? null : _handleSignup,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.white,
-                          foregroundColor: Colors.black,
-                          padding: const EdgeInsets.symmetric(vertical: 15),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(25),
-                          ),
-                        ),
-                        child:
-                            _loading
-                                ? const SizedBox(
-                                  width: 20,
-                                  height: 20,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                                : const Text(
-                                  'Continue',
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                      ),
+                      style: const TextStyle(color: Colors.white),
                     ),
-                    const SizedBox(height: 12),
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton(
-                        onPressed: () {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('SSO not yet implemented'),
-                            ),
-                          );
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.white,
-                          foregroundColor: Colors.black,
-                          padding: const EdgeInsets.symmetric(vertical: 15),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(25),
-                          ),
-                        ),
-                        child: const Text(
-                          'Continue with SSO',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
+                  ),
+                  const SizedBox(height: 12),
+                  _LabeledField(
+                    label: 'Confirm Password',
+                    child: TextFormField(
+                      controller: _pw2Ctrl,
+                      obscureText: _obscure,
+                      autofillHints: const [AutofillHints.password],
+                      validator: _vPw2,
+                      decoration: const InputDecoration(
+                        hintText: '••••••••',
                       ),
+                      style: const TextStyle(color: Colors.white),
                     ),
-                    const SizedBox(height: 24),
-                  ],
-                ),
+                  ),
+                  const SizedBox(height: 24),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: _loading ? null : _submit,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: purple,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
+                      child: _loading
+                          ? const SizedBox(
+                              height: 20,
+                              width: 20,
+                              child: CircularProgressIndicator(
+                                  strokeWidth: 2, color: Colors.white),
+                            )
+                          : const Text('Create Account',
+                              style: TextStyle(fontSize: 16)),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextButton(
+                    onPressed: () {
+                      HapticFeedback.selectionClick();
+                      Navigator.pushReplacementNamed(context, Routes.signIn);
+                    },
+                    child: const Text('Already have an account? Sign in'),
+                  ),
+                ],
               ),
             ),
           ),
         ),
       ),
+    );
+  }
+}
+
+class _LabeledField extends StatelessWidget {
+  final String label;
+  final Widget child;
+  const _LabeledField({required this.label, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label,
+            style: const TextStyle(
+                color: Colors.white70, fontWeight: FontWeight.w600)),
+        const SizedBox(height: 6),
+        Theme(
+          data: Theme.of(context).copyWith(
+            inputDecorationTheme: InputDecorationTheme(
+              filled: true,
+              fillColor: const Color(0xFF1A1F29),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide.none,
+              ),
+              hintStyle: const TextStyle(color: Colors.white38),
+            ),
+          ),
+          child: child,
+        ),
+      ],
     );
   }
 }
