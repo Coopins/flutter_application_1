@@ -24,15 +24,11 @@ import 'screens/settings_screen.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Lock device orientation to portrait (optional, done before runApp).
+  // Lock device orientation to portrait (optional).
   await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
 
-  // Load env with a safe fallback (no secrets in CI).
-  try {
-    await fdotenv.dotenv.load(fileName: 'env/.env'); // local, git-ignored
-  } catch (_) {
-    await fdotenv.dotenv.load(fileName: 'env/.env.example'); // CI fallback
-  }
+  // 🔒 Load your real local env (no fallback). This will throw if missing.
+  await fdotenv.dotenv.load(fileName: 'env/.env');
 
   // Firebase init
   await Firebase.initializeApp(
@@ -57,7 +53,7 @@ Future<void> main() async {
     }
   }
 
-  // CI-safe one-liner to see auth state at launch (no raw print).
+  // One-liner to see auth state at launch.
   final u = FirebaseAuth.instance.currentUser;
   debugPrint(
     'Auth at start -> uid=${u?.uid ?? "(none)"} anon=${u?.isAnonymous == true} bypass=$bypass',

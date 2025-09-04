@@ -1,12 +1,11 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_tts/flutter_tts.dart';
-import 'package:speech_to_text/speech_to_text.dart' as stt;
-import 'package:speech_to_text/speech_recognition_result.dart';
 
 import 'package:flutter_application_1/services/gabi_service.dart';
 import 'package:flutter_application_1/services/lesson_plan_storage.dart';
+import 'package:flutter_application_1/services/tts_service.dart';
+import 'package:flutter_application_1/services/stt_service.dart';
 import 'package:flutter_application_1/routes.dart';
 
 class FluencyAssessmentScreen extends StatefulWidget {
@@ -19,10 +18,11 @@ class FluencyAssessmentScreen extends StatefulWidget {
 }
 
 class _FluencyAssessmentScreenState extends State<FluencyAssessmentScreen> {
-  final stt.SpeechToText _stt = stt.SpeechToText();
-  final FlutterTts _tts = FlutterTts();
+  // Services
+  final STTService _stt = STTService();
 
-  bool _available = false;
+  // State
+  bool _sttReady = false;
   bool _listening = false;
   bool _processing = false;
 
@@ -34,14 +34,11 @@ class _FluencyAssessmentScreenState extends State<FluencyAssessmentScreen> {
   String _transcript = '';
   Timer? _safetyTimeout;
 
-  stt.LocaleName? _chosenLocale;
-
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     final args = (ModalRoute.of(context)?.settings.arguments as Map?) ?? {};
-    _language =
-        args['selectedLanguage'] as String? ??
+    _language = args['selectedLanguage'] as String? ??
         widget.selectedLanguage ??
         _language;
     _ttsLocale = args['ttsLocale'] as String? ?? _ttsLocale;
@@ -50,22 +47,11 @@ class _FluencyAssessmentScreenState extends State<FluencyAssessmentScreen> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _introThenListen());
-  }
-
-  String _langPrefix(String language) {
-    switch (language) {
-      case 'Spanish':
-        return 'es';
-      case 'French':
-        return 'fr';
-      case 'German':
-        return 'de';
-      case 'Chinese':
-        return 'zh';
-      default:
-        return 'en';
-    }
+    // Do STT init + intro after first frame so context is fully ready.
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await _bootSTT();
+      await _introThenListen();
+    });
   }
 
   String _questionFor(String language) {
@@ -83,76 +69,40 @@ class _FluencyAssessmentScreenState extends State<FluencyAssessmentScreen> {
     }
   }
 
+  // ---- Boot sequence: init STT, then speak intro, then listen ----
+  Future<void> _bootSTT() async {
+    await _stt.init();
+    if (!mounted) return;
+    if (!_stt.isAvailable) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Speech recognition not available or mic denied.'),
+        ),
+      );
+    }
+    setState(() => _sttReady = _stt.isAvailable);
+  }
+
   Future<void> _introThenListen() async {
     try {
-      await _tts.setLanguage(_ttsLocale);
-      await _tts.setSpeechRate(0.45);
-      await _tts.setPitch(1.0);
-
+      await TTSService.setDefaults();
       final intro =
           "Hi! I’m going to assess your fluency in $_language. Please answer the following in $_language.";
       final question = _questionFor(_language);
 
-      await _tts.awaitSpeakCompletion(true);
-      await _tts.stop();
-      await _tts.speak("$intro $question");
+      await TTSService.stop(); // ensure clean start
+      await TTSService.speak("$intro $question", lang: _ttsLocale);
+
       await Future.delayed(const Duration(milliseconds: 250));
-      await _initAndStartListening();
+      await _startListeningLong();
     } catch (_) {
-      await _initAndStartListening();
+      await _startListeningLong();
     }
   }
 
-  Future<void> _initAndStartListening() async {
-    _available = await _stt.initialize(
-      onStatus: (s) {
-        if (s == 'done' && !_processing && _transcript.trim().isNotEmpty) {
-          _processTranscript();
-        }
-      },
-      onError: (e) {
-        if (!mounted) return;
-        final msg =
-            e.errorMsg == 'error_no_match'
-                ? 'Didn’t catch that. Try again, a bit closer to the mic.'
-                : 'Speech error: ${e.errorMsg}';
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(msg)));
-        setState(() => _listening = false);
-      },
-    );
-
-    if (!_available) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Speech recognition not available on this device.'),
-        ),
-      );
-      return;
-    }
-
-    final locales = await _stt.locales();
-    final system = await _stt.systemLocale();
-    final p = _langPrefix(_language).toLowerCase();
-
-    stt.LocaleName? pick;
-    for (final l in locales) {
-      final id = l.localeId.toLowerCase();
-      if (id.startsWith('${p}_') || id.startsWith('${p}-') || id == p) {
-        pick = l;
-        break;
-      }
-    }
-    _chosenLocale = pick ?? system;
-
-    await Future.delayed(const Duration(milliseconds: 150));
-    await _startListeningLong();
-  }
-
+  // ---- Listen / Stop / Process ----
   Future<void> _startListeningLong() async {
-    if (!_available || _listening) return;
+    if (!_sttReady || _listening) return;
     setState(() {
       _transcript = '';
       _listening = true;
@@ -160,17 +110,13 @@ class _FluencyAssessmentScreenState extends State<FluencyAssessmentScreen> {
       _navigated = false;
     });
 
-    await _stt.listen(
-      onResult: _onSpeechResult,
+    await _stt.start(
+      onText: (t) => setState(() => _transcript = t),
       listenFor: const Duration(minutes: 1),
       pauseFor: const Duration(seconds: 5),
-      localeId: _chosenLocale?.localeId,
-      listenOptions: stt.SpeechListenOptions(
-        partialResults: true,
-        listenMode: stt.ListenMode.dictation,
-      ),
     );
 
+    // Hard stop after a minute for safety
     _safetyTimeout?.cancel();
     _safetyTimeout = Timer(const Duration(minutes: 1, seconds: 5), () async {
       if (_listening) await _stopListening();
@@ -186,13 +132,6 @@ class _FluencyAssessmentScreenState extends State<FluencyAssessmentScreen> {
 
     if (_transcript.trim().isNotEmpty && !_processing) {
       _processTranscript();
-    }
-  }
-
-  void _onSpeechResult(SpeechRecognitionResult result) {
-    setState(() => _transcript = result.recognizedWords);
-    if (result.finalResult) {
-      _stopListening();
     }
   }
 
@@ -242,19 +181,20 @@ class _FluencyAssessmentScreenState extends State<FluencyAssessmentScreen> {
   void dispose() {
     _safetyTimeout?.cancel();
     _stt.cancel();
-    _tts.stop();
+    TTSService.stop();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final purple = const Color(0xFF7C3AED);
-    final statusText =
-        _processing
-            ? 'Generating lesson plan…'
-            : _listening
+    final statusText = _processing
+        ? 'Generating lesson plan…'
+        : _listening
             ? 'Listening… tap mic to stop'
-            : 'Tap mic to start';
+            : _sttReady
+                ? 'Tap mic to start'
+                : 'Mic permission needed or STT unavailable';
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -263,12 +203,11 @@ class _FluencyAssessmentScreenState extends State<FluencyAssessmentScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.home),
-            onPressed:
-                () => Navigator.pushNamedAndRemoveUntil(
-                  context,
-                  Routes.home,
-                  (r) => false,
-                ),
+            onPressed: () => Navigator.pushNamedAndRemoveUntil(
+              context,
+              Routes.home,
+              (r) => false,
+            ),
           ),
         ],
       ),
@@ -279,25 +218,23 @@ class _FluencyAssessmentScreenState extends State<FluencyAssessmentScreen> {
             Text(_language, style: const TextStyle(color: Colors.white70)),
             const SizedBox(height: 24),
             GestureDetector(
-              onTap:
-                  _processing
-                      ? null
-                      : () async {
-                        if (_listening) {
-                          await _stopListening();
-                        } else {
-                          await _startListeningLong();
-                        }
-                      },
+              onTap: _processing
+                  ? null
+                  : () async {
+                      if (_listening) {
+                        await _stopListening();
+                      } else {
+                        await _startListeningLong();
+                      }
+                    },
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
                 height: 140,
                 width: 140,
                 decoration: BoxDecoration(
-                  color:
-                      _listening
-                          ? purple.withValues(alpha: 0.25)
-                          : const Color(0xFF1A1F29),
+                  color: _listening
+                      ? purple.withValues(alpha: 0.25)
+                      : const Color(0xFF1A1F29),
                   shape: BoxShape.circle,
                   boxShadow: [
                     if (_listening)
