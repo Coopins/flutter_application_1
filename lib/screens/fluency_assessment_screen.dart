@@ -8,6 +8,7 @@ import 'package:flutter_tts/flutter_tts.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../routes.dart';
 import '../services/stt_service.dart';
@@ -33,6 +34,10 @@ class _FluencyAssessmentScreenState extends State<FluencyAssessmentScreen> {
   String _status = 'Preparing…';
   String? _recordingPath;
 
+  // Hard cap so recording can't run forever if user forgets to stop.
+  Timer? _hardStopTimer;
+  static const int _maxRecordSeconds = 90;
+
   @override
   void initState() {
     super.initState();
@@ -41,6 +46,7 @@ class _FluencyAssessmentScreenState extends State<FluencyAssessmentScreen> {
 
   @override
   void dispose() {
+    _hardStopTimer?.cancel();
     _tts.stop();
     super.dispose();
   }
@@ -72,13 +78,56 @@ class _FluencyAssessmentScreenState extends State<FluencyAssessmentScreen> {
     }
   }
 
+  // --- Preflight helpers -----------------------------------------------------
+
+  Future<bool> _ensureMicPermission() async {
+    final status = await Permission.microphone.status;
+    if (status.isGranted) return true;
+
+    final req = await Permission.microphone.request();
+    if (req.isGranted) return true;
+
+    if (!mounted) return false;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Text('Microphone permission is required.'),
+        action: SnackBarAction(
+          label: 'Open Settings',
+          onPressed: openAppSettings,
+        ),
+      ),
+    );
+    return false;
+  }
+
+  Future<bool> _storageWritableProbe() async {
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final test = File(
+        '${dir.path}/.__gab_probe_${DateTime.now().millisecondsSinceEpoch}',
+      );
+      await test.create(recursive: true);
+      await test.writeAsBytes(const []);
+      await test.delete();
+      return true;
+    } catch (e) {
+      if (!mounted) return false;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Storage unavailable: $e')));
+      setState(() => _status = 'Storage unavailable.');
+      return false;
+    }
+  }
+
+  // --- Recording -------------------------------------------------------------
+
   Future<void> _startRecording() async {
     try {
-      final hasPerm = await _recorder.hasPermission();
-      if (hasPerm != true) {
-        setState(() => _status = 'Mic permission denied.');
-        return;
-      }
+      // Preflight: mic permission + writable storage
+      if (!await _ensureMicPermission()) return;
+      if (!await _storageWritableProbe()) return;
+
       final dir = await getApplicationDocumentsDirectory();
       final filePath =
           '${dir.path}/recording_${DateTime.now().millisecondsSinceEpoch}.wav';
@@ -94,6 +143,19 @@ class _FluencyAssessmentScreenState extends State<FluencyAssessmentScreen> {
 
       _recordingPath = filePath;
       setState(() => _isRecording = true);
+
+      // Hard-stop safety timer
+      _hardStopTimer?.cancel();
+      _hardStopTimer = Timer(const Duration(seconds: _maxRecordSeconds), () {
+        if (_isRecording) {
+          _stopRecording();
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Recording stopped at 90s limit.')),
+            );
+          }
+        }
+      });
     } catch (e) {
       setState(() {
         _isRecording = false;
@@ -105,6 +167,8 @@ class _FluencyAssessmentScreenState extends State<FluencyAssessmentScreen> {
   Future<void> _stopRecording() async {
     if (!_isRecording) return;
     try {
+      _hardStopTimer?.cancel();
+
       final stoppedPath = await _recorder.stop();
       _isRecording = false;
       if (stoppedPath != null && stoppedPath.isNotEmpty) {
@@ -147,8 +211,9 @@ class _FluencyAssessmentScreenState extends State<FluencyAssessmentScreen> {
       );
 
       // 3) Save to Firestore (non-blocking for UX if it fails)
+      String? docId;
       try {
-        await _saveLessonPlan(
+        docId = await _saveLessonPlan(
           planMarkdown,
           language: widget.targetLanguage,
           ttsLocale: _localeFor(widget.targetLanguage),
@@ -157,7 +222,9 @@ class _FluencyAssessmentScreenState extends State<FluencyAssessmentScreen> {
 
       // 4) Navigate to Lesson Plan screen
       if (!mounted) return;
-      Navigator.of(context).pushReplacementNamed(Routes.lessonPlan);
+      Navigator.of(
+        context,
+      ).pushReplacementNamed(Routes.lessonPlan, arguments: {'docId': docId});
 
       setState(() => _status = 'Plan generated and saved.');
     } catch (e) {
@@ -167,15 +234,15 @@ class _FluencyAssessmentScreenState extends State<FluencyAssessmentScreen> {
     }
   }
 
-  Future<void> _saveLessonPlan(
+  Future<String?> _saveLessonPlan(
     String markdown, {
     required String language,
     required String ttsLocale,
   }) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return;
+    if (uid == null) return null;
     final now = FieldValue.serverTimestamp();
-    await FirebaseFirestore.instance
+    final ref = await FirebaseFirestore.instance
         .collection('users')
         .doc(uid)
         .collection('lessonPlans')
@@ -186,6 +253,8 @@ class _FluencyAssessmentScreenState extends State<FluencyAssessmentScreen> {
           'createdAt': now,
           'updatedAt': now,
         });
+    debugPrint('✅ Saved lesson plan: users/$uid/lessonPlans/${ref.id}');
+    return ref.id;
   }
 
   // ------- Helpers for the 7 languages -------

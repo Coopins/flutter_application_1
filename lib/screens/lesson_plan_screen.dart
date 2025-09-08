@@ -1,6 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_tts/flutter_tts.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 import '../routes.dart';
 
 class LessonPlanScreen extends StatefulWidget {
@@ -11,6 +13,24 @@ class LessonPlanScreen extends StatefulWidget {
 }
 
 class _LessonPlanScreenState extends State<LessonPlanScreen> {
+  final FlutterTts _tts = FlutterTts();
+  bool _isSpeaking = false;
+
+  String? _fullMarkdown;
+  String? _ttsLocale;
+  String _langLabel = 'English';
+
+  // Parsed sections
+  List<_PlanSection> _sections = [];
+
+  @override
+  void dispose() {
+    _tts.stop();
+    super.dispose();
+  }
+
+  // -------- Firestore loads --------
+
   Future<DocumentSnapshot<Map<String, dynamic>>?> _loadLatest() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return null;
@@ -28,7 +48,23 @@ class _LessonPlanScreenState extends State<LessonPlanScreen> {
     return snap.docs.first;
   }
 
-  // Map stored language codes to friendly labels (7 languages).
+  Future<DocumentSnapshot<Map<String, dynamic>>?> _loadById(String id) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null || id.isEmpty) return null;
+
+    final doc =
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(uid)
+            .collection('lessonPlans')
+            .doc(id)
+            .get();
+
+    return doc.exists ? doc : null;
+  }
+
+  // -------- Labels / locales --------
+
   String _labelFromCode(String code) {
     switch (code.toLowerCase()) {
       case 'es':
@@ -50,12 +86,231 @@ class _LessonPlanScreenState extends State<LessonPlanScreen> {
     }
   }
 
+  String _localeFrom(String? codeOrLocale) {
+    final s = (codeOrLocale ?? '').toLowerCase();
+    if (s.contains('es') || s == 'es') return 'es-ES';
+    if (s.contains('ru') || s == 'ru') return 'ru-RU';
+    if (s.contains('pt') || s == 'pt') return 'pt-BR';
+    if (s.contains('ja') || s == 'ja') return 'ja-JP';
+    if (s.contains('ko') || s == 'ko') return 'ko-KR';
+    if (s.contains('ro') || s == 'ro') return 'ro-RO';
+    if (s.contains('fr') || s == 'fr') return 'fr-FR';
+    return 'en-US';
+  }
+
+  // -------- TTS helpers --------
+
+  String _markdownToSpeech(String md) {
+    var t = md;
+
+    // Analyzer-friendly regexes (no inline (?m) flags)
+    final heading = RegExp(r'^\s{0,3}#{1,6}\s+', multiLine: true);
+    final bold = RegExp(r'\*\*([^*]+)\*\*');
+    final ital = RegExp(r'\*([^*\n]+)\*');
+    final code = RegExp(r'`([^`]+)`');
+    final quote = RegExp(r'^\s{0,3}>\s?', multiLine: true);
+    final link = RegExp(r'\[([^\]]+)\]\(([^)]+)\)');
+    final ul = RegExp(r'^\s*[-*+]\s+', multiLine: true);
+    final ol = RegExp(r'^\s*\d+\.\s+', multiLine: true);
+
+    t = t.replaceAll(heading, '');
+    t = t.replaceAll(bold, r'$1');
+    t = t.replaceAll(ital, r'$1');
+    t = t.replaceAll(code, r'$1');
+    t = t.replaceAll(quote, '');
+    t = t.replaceAll(link, r'$1');
+    t = t.replaceAll(ul, '• ');
+    t = t.replaceAll(ol, '• ');
+
+    t = t.replaceAll('\r', '');
+    return t.trim();
+  }
+
+  Future<void> _speakText(String text) async {
+    if (text.trim().isEmpty) {
+      return;
+    }
+    try {
+      await _tts.stop();
+      await _tts.setLanguage(_ttsLocale ?? 'en-US');
+      await _tts.setSpeechRate(0.47);
+      await _tts.setPitch(1.0);
+      await _tts.awaitSpeakCompletion(true);
+      setState(() => _isSpeaking = true);
+      await _tts.speak(text);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('TTS error: $e')));
+    } finally {
+      if (mounted) setState(() => _isSpeaking = false);
+    }
+  }
+
+  Future<void> _speakFullPlan() async {
+    if (_fullMarkdown == null) {
+      return;
+    }
+    await _speakText(_markdownToSpeech(_fullMarkdown!));
+  }
+
+  Future<void> _speakSection(_PlanSection s) async {
+    await _speakText(_markdownToSpeech(s.content));
+  }
+
+  Future<void> _stopSpeaking() async {
+    await _tts.stop();
+    if (mounted) setState(() => _isSpeaking = false);
+  }
+
+  // -------- Markdown parsing into sections --------
+
+  static const List<String> _order = [
+    'overview',
+    'goals',
+    'key focus areas',
+    'key phrases',
+    'mini-dialogue',
+    'mini dialogue',
+    'pronunciation tips',
+    'grammar bite',
+    'drills',
+    'comprehension checks',
+    'homework',
+    'summary',
+    'other',
+  ];
+
+  List<_PlanSection> _splitMarkdownToSections(String md) {
+    final lines = md.split('\n');
+
+    final List<_PlanSection> raw = [];
+    String? currentTitle;
+    final buffer = StringBuffer();
+
+    bool seenSection = false;
+    final headerRx = RegExp(r'^\s*#{2,3}\s+(.+)\s*$');
+
+    for (final line in lines) {
+      final m = headerRx.firstMatch(line);
+      if (m != null) {
+        // flush previous
+        if (currentTitle != null) {
+          raw.add(
+            _PlanSection(
+              title: currentTitle,
+              content: buffer.toString().trim(),
+            ),
+          );
+          buffer.clear();
+        } else if (!seenSection && buffer.isNotEmpty) {
+          raw.add(
+            _PlanSection(title: 'Overview', content: buffer.toString().trim()),
+          );
+          buffer.clear();
+        }
+        final captured = m.group(1) ?? '';
+        currentTitle = captured.trim();
+        seenSection = true;
+      } else {
+        buffer.writeln(line);
+      }
+    }
+    // flush tail
+    if (currentTitle != null) {
+      raw.add(
+        _PlanSection(title: currentTitle, content: buffer.toString().trim()),
+      );
+    } else {
+      if (buffer.isNotEmpty) {
+        raw.add(
+          _PlanSection(title: 'Overview', content: buffer.toString().trim()),
+        );
+      }
+    }
+
+    // Normalize titles & order
+    for (var i = 0; i < raw.length; i++) {
+      raw[i] = raw[i].copyWith(title: _canon(raw[i].title));
+    }
+
+    raw.sort((a, b) {
+      final ai = _order.indexOf(a.title.toLowerCase());
+      final bi = _order.indexOf(b.title.toLowerCase());
+      final aa = ai == -1 ? 999 : ai;
+      final bb = bi == -1 ? 999 : bi;
+      return aa.compareTo(bb);
+    });
+
+    // Merge duplicates
+    final List<_PlanSection> merged = [];
+    for (final s in raw) {
+      if (merged.isNotEmpty &&
+          merged.last.title.toLowerCase() == s.title.toLowerCase()) {
+        merged.last = merged.last.copyWith(
+          content: '${merged.last.content}\n\n${s.content}'.trim(),
+        );
+      } else {
+        merged.add(s);
+      }
+    }
+
+    if (merged.isEmpty) {
+      merged.add(_PlanSection(title: 'Overview', content: md));
+    }
+    return merged;
+  }
+
+  String _canon(String title) {
+    final t = title.trim().toLowerCase();
+    if (t.contains('key focus')) return 'Key Focus Areas';
+    if (t.contains('key phrase')) return 'Key Phrases';
+    if (t.contains('mini') && t.contains('dialog')) return 'Mini-Dialogue';
+    if (t.contains('pronunciation')) return 'Pronunciation Tips';
+    if (t.contains('grammar')) return 'Grammar Bite';
+    if (t.contains('drill')) return 'Drills';
+    if (t.contains('comprehension')) return 'Comprehension Checks';
+    if (t.contains('homework') || t.contains('practice at home'))
+      return 'Homework';
+    if (t.contains('goal')) return 'Goals';
+    if (t.contains('summary')) return 'Summary';
+    if (t.contains('overview') || t.contains('lesson plan')) return 'Overview';
+    return title.trim().isEmpty ? 'Other' : _toTitleCase(title.trim());
+  }
+
+  String _toTitleCase(String s) => s
+      .split(' ')
+      .map((w) => w.isEmpty ? '' : '${w[0].toUpperCase()}${w.substring(1)}')
+      .join(' ');
+
+  // -------- UI --------
+
   @override
   Widget build(BuildContext context) {
+    // Accept optional docId from navigation
+    String? docId;
+    final args = ModalRoute.of(context)?.settings.arguments;
+    if (args is Map && args['docId'] is String) {
+      final v = (args['docId'] as String).trim();
+      docId = v.isEmpty ? null : v;
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('My Lesson Plan'),
         actions: [
+          IconButton(
+            tooltip: 'Play',
+            icon: const Icon(Icons.play_arrow),
+            onPressed:
+                _isSpeaking || _fullMarkdown == null ? null : _speakFullPlan,
+          ),
+          IconButton(
+            tooltip: 'Stop',
+            icon: const Icon(Icons.stop),
+            onPressed: _isSpeaking ? _stopSpeaking : null,
+          ),
           IconButton(
             tooltip: 'Home',
             icon: const Icon(Icons.home_outlined),
@@ -70,7 +325,7 @@ class _LessonPlanScreenState extends State<LessonPlanScreen> {
         ],
       ),
       body: FutureBuilder<DocumentSnapshot<Map<String, dynamic>>?>(
-        future: _loadLatest(),
+        future: docId != null ? _loadById(docId) : _loadLatest(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
@@ -79,40 +334,145 @@ class _LessonPlanScreenState extends State<LessonPlanScreen> {
           if (doc == null || !doc.exists) {
             return const Center(child: Text('No lesson plans yet.'));
           }
-
           final data = doc.data()!;
           final langCode = (data['language'] ?? 'en') as String;
           final md = (data['markdown'] ?? '') as String;
-          final langLabel = _labelFromCode(langCode);
+          final savedLocale = data['ttsLocale'] as String?;
+
+          _langLabel = _labelFromCode(langCode);
+          _ttsLocale = _localeFrom(savedLocale ?? langCode);
+          _fullMarkdown = md;
+          _sections = _splitMarkdownToSections(md);
 
           return Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-            child: SingleChildScrollView(
-              child: DefaultTextStyle(
-                style: Theme.of(context).textTheme.bodyLarge!,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Center(
-                      child: Text(
-                        'Latest plan – $langLabel',
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      'Personalized Lesson Plan',
-                      style: Theme.of(context).textTheme.headlineMedium,
-                    ),
-                    const SizedBox(height: 8),
-                    SelectableText(md),
-                  ],
+            child: ListView(
+              children: [
+                Center(
+                  child: Text(
+                    'Latest plan – $_langLabel',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
                 ),
-              ),
+                const SizedBox(height: 12),
+                Text(
+                  'Personalized Lesson Plan',
+                  style: Theme.of(context).textTheme.headlineMedium,
+                ),
+                const SizedBox(height: 12),
+                ..._sections.map(
+                  (s) => _SectionCard(
+                    section: s,
+                    onListen: () => _speakSection(s),
+                  ),
+                ),
+              ],
             ),
           );
         },
       ),
     );
   }
+}
+
+// ===== Section UI =====
+
+class _SectionCard extends StatefulWidget {
+  const _SectionCard({required this.section, required this.onListen});
+
+  final _PlanSection section;
+  final VoidCallback onListen;
+
+  @override
+  State<_SectionCard> createState() => _SectionCardState();
+}
+
+class _SectionCardState extends State<_SectionCard> {
+  bool _expanded = true; // start expanded for better discoverability
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final surface = scheme.surface;
+    final onSurface = scheme.onSurface.withValues(alpha: 0.86);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: surface.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white10),
+      ),
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          initiallyExpanded: _expanded,
+          onExpansionChanged: (v) => setState(() => _expanded = v),
+          tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          title: Text(
+            widget.section.title,
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
+          trailing: Icon(_expanded ? Icons.expand_less : Icons.expand_more),
+          children: [
+            Container(
+              decoration: BoxDecoration(
+                color: surface.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  MarkdownBody(
+                    data: widget.section.content,
+                    styleSheet: MarkdownStyleSheet.fromTheme(
+                      Theme.of(context),
+                    ).copyWith(
+                      p: Theme.of(
+                        context,
+                      ).textTheme.bodyLarge?.copyWith(color: onSurface),
+                      listBullet: Theme.of(context).textTheme.bodyLarge,
+                      blockquotePadding: const EdgeInsets.all(8),
+                      blockquoteDecoration: BoxDecoration(
+                        color: surface.withValues(alpha: 0.10),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      h1: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                      h2: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  TextButton.icon(
+                    onPressed: widget.onListen,
+                    icon: const Icon(Icons.volume_up),
+                    label: const Text('Listen'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: Theme.of(context).colorScheme.primary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PlanSection {
+  final String title;
+  final String content;
+  const _PlanSection({required this.title, required this.content});
+
+  _PlanSection copyWith({String? title, String? content}) => _PlanSection(
+    title: title ?? this.title,
+    content: content ?? this.content,
+  );
 }
