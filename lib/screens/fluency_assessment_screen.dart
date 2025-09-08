@@ -70,6 +70,9 @@ class _FluencyAssessmentScreenState extends State<FluencyAssessmentScreen> {
       await _tts.setLanguage(ttsLocale);
       await _tts.speak(question);
 
+      // ✅ NEW: tiny delay so the OS releases the TTS audio session cleanly
+      await Future.delayed(const Duration(milliseconds: 250));
+
       // Auto-start recording (tap mic ONLY to stop)
       await _startRecording();
       setState(() => _status = 'Listening… Tap the mic to stop.');
@@ -141,6 +144,13 @@ class _FluencyAssessmentScreenState extends State<FluencyAssessmentScreen> {
         path: filePath,
       );
 
+      // ✅ NEW: verify the recorder is actually running
+      final actuallyRecording = await _recorder.isRecording();
+      if (!actuallyRecording) {
+        setState(() => _status = 'Recorder did not start. Try again.');
+        return;
+      }
+
       _recordingPath = filePath;
       setState(() => _isRecording = true);
 
@@ -174,11 +184,20 @@ class _FluencyAssessmentScreenState extends State<FluencyAssessmentScreen> {
       if (stoppedPath != null && stoppedPath.isNotEmpty) {
         _recordingPath = stoppedPath;
       }
-      setState(() => _status = 'Generating your lesson plan…');
+
+      // ✅ NEW: basic file sanity check before processing
       if (_recordingPath == null || !File(_recordingPath!).existsSync()) {
         setState(() => _status = 'No audio captured.');
         return;
       }
+      final bytes = await File(_recordingPath!).length();
+      if (bytes < 6000) {
+        // ~few hundred ms — avoids empty/accidental taps
+        setState(() => _status = 'Very short recording. Please try again.');
+        return;
+      }
+
+      setState(() => _status = 'Generating your lesson plan…');
       await _processRecording(_recordingPath!);
     } catch (e) {
       setState(() => _status = 'Failed to stop recording: $e');
@@ -201,24 +220,42 @@ class _FluencyAssessmentScreenState extends State<FluencyAssessmentScreen> {
       // 1) Transcribe with Whisper
       final transcript = await stt.transcribe(
         File(path),
-        languageCode: widget.targetLanguage,
+        // ✅ CHANGED: let Whisper auto-detect if your STTService supports null/''.
+        // Otherwise pass a simple 2-letter code like 'es' (not es-ES) for best results.
+        languageCode:
+            widget.targetLanguage.isEmpty ? null : widget.targetLanguage,
       );
 
-      // 2) Generate structured Markdown lesson plan
+      // ✅ NEW: Guard against empty/irrelevant transcript (prevents default/fallback plans)
+      final cleaned = transcript.trim();
+      debugPrint(
+        '🎧 TRANSCRIPT (${cleaned.length} chars): ${cleaned.substring(0, cleaned.length.clamp(0, 160))}',
+      );
+      if (cleaned.length < 12) {
+        setState(
+          () => _status = 'I didn’t catch enough speech. Please try again.',
+        );
+        return;
+      }
+
+      // 2) Generate structured Markdown lesson plan (must use the transcript)
       final planMarkdown = await lp.generatePlan(
-        transcript: transcript,
+        transcript: cleaned,
         languageCode: widget.targetLanguage,
       );
 
-      // 3) Save to Firestore (non-blocking for UX if it fails)
+      // 3) Save to Firestore (include transcript for verification)
       String? docId;
       try {
         docId = await _saveLessonPlan(
           planMarkdown,
           language: widget.targetLanguage,
           ttsLocale: _localeFor(widget.targetLanguage),
+          transcript: cleaned, // ✅ NEW
         );
-      } catch (_) {}
+      } catch (e) {
+        debugPrint('⚠️ Save failed (non-blocking): $e');
+      }
 
       // 4) Navigate to Lesson Plan screen
       if (!mounted) return;
@@ -238,21 +275,27 @@ class _FluencyAssessmentScreenState extends State<FluencyAssessmentScreen> {
     String markdown, {
     required String language,
     required String ttsLocale,
+    String? transcript, // ✅ NEW
   }) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return null;
     final now = FieldValue.serverTimestamp();
+    final data = <String, dynamic>{
+      'language': language, // 'es','ru','pt','ja','ko','ro','fr'
+      'markdown': markdown,
+      'ttsLocale': ttsLocale,
+      'createdAt': now,
+      'updatedAt': now,
+      // ✅ NEW: store for proof/QA
+      if (transcript != null && transcript.isNotEmpty) 'transcript': transcript,
+      'source': 'speech', // ✅ NEW: lightweight provenance
+    };
     final ref = await FirebaseFirestore.instance
         .collection('users')
         .doc(uid)
         .collection('lessonPlans')
-        .add({
-          'language': language, // 'es','ru','pt','ja','ko','ro','fr'
-          'markdown': markdown,
-          'ttsLocale': ttsLocale,
-          'createdAt': now,
-          'updatedAt': now,
-        });
+        .add(data);
+
     debugPrint('✅ Saved lesson plan: users/$uid/lessonPlans/${ref.id}');
     return ref.id;
   }

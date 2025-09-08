@@ -1,33 +1,59 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
-import 'package:flutter/foundation.dart';
 
+/// Simple STT service backed by OpenAI Whisper.
+/// Usage:
+///   final stt = STTService(apiKey: `YOUR_OPENAI_API_KEY`);
+///   final text = await stt.transcribe(File(path), languageCode: 'es'); // or null to auto-detect
 class STTService {
-  STTService({required this.apiKey});
   final String apiKey;
+  final Uri _whisperUrl = Uri.parse(
+    'https://api.openai.com/v1/audio/transcriptions',
+  );
 
-  /// Transcribe audio with OpenAI Whisper. Returns plain text.
+  STTService({required this.apiKey});
+
+  /// Returns a trimmed final transcript. Throws on network/HTTP errors.
+  /// [languageCode] should be a short code like `es`, `fr`, `en`.
+  /// If null, Whisper will auto-detect.
   Future<String> transcribe(File audioFile, {String? languageCode}) async {
-    final uri = Uri.parse('https://api.openai.com/v1/audio/transcriptions');
+    if (!await audioFile.exists()) {
+      throw Exception('Audio file does not exist: ${audioFile.path}');
+    }
 
-    final req =
-        http.MultipartRequest('POST', uri)
+    final request =
+        http.MultipartRequest('POST', _whisperUrl)
           ..headers['Authorization'] = 'Bearer $apiKey'
           ..fields['model'] = 'whisper-1'
-          ..fields['response_format'] = 'text';
-    if (languageCode != null && languageCode.isNotEmpty) {
-      // optional hint to Whisper (ISO 639-1 like 'es','de','fr','it','pt','zh')
-      req.fields['language'] = languageCode.toLowerCase();
-    }
-    req.files.add(await http.MultipartFile.fromPath('file', audioFile.path));
+          ..fields['response_format'] = 'json';
 
-    final streamed = await req.send().timeout(const Duration(seconds: 90));
+    // Optional language hint (recommended). Use short code only.
+    if (languageCode != null && languageCode.trim().isNotEmpty) {
+      final shortCode =
+          languageCode.split(RegExp('[-_]')).first.toLowerCase().trim();
+      request.fields['language'] = shortCode;
+    }
+
+    // NOTE: We omit `contentType` to avoid MediaType type mismatches.
+    // The API will infer from the file extension.
+    request.files.add(
+      await http.MultipartFile.fromPath(
+        'file',
+        audioFile.path,
+        filename: audioFile.uri.pathSegments.last,
+      ),
+    );
+
+    final streamed = await request.send();
     final resp = await http.Response.fromStream(streamed);
 
-    if (resp.statusCode >= 200 && resp.statusCode < 300) {
-      return resp.body.trim();
+    if (resp.statusCode != 200) {
+      throw Exception('Whisper error ${resp.statusCode}: ${resp.body}');
     }
-    debugPrint('Whisper error ${resp.statusCode}: ${resp.body}');
-    throw Exception('Transcription failed (${resp.statusCode}).');
+
+    final data = json.decode(resp.body) as Map<String, dynamic>;
+    final text = (data['text'] ?? '').toString().trim();
+    return text;
   }
 }
