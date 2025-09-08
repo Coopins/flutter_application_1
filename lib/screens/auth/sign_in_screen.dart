@@ -1,3 +1,4 @@
+// lib/screens/auth/sign_in_screen.dart
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -50,10 +51,7 @@ class _SignInScreenState extends State<SignInScreen> {
     HapticFeedback.selectionClick();
 
     try {
-      await AuthService.signIn(
-        email: _emailCtrl.text,
-        password: _pwCtrl.text,
-      );
+      await AuthService.signIn(email: _emailCtrl.text, password: _pwCtrl.text);
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -61,7 +59,7 @@ class _SignInScreenState extends State<SignInScreen> {
       );
       Navigator.pushNamedAndRemoveUntil(
         context,
-        Routes.languageSelection,
+        Routes.home, // ✅ sign-in always lands on Home
         (r) => false,
       );
     } catch (e) {
@@ -97,7 +95,6 @@ class _SignInScreenState extends State<SignInScreen> {
     }
   }
 
-  /// Dev convenience: anonymous sign-in button only in debug/profile builds.
   Future<void> _devAnonSignIn() async {
     try {
       final cred = await FirebaseAuth.instance.signInAnonymously();
@@ -105,11 +102,7 @@ class _SignInScreenState extends State<SignInScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Signed in anonymously: ${cred.user?.uid}')),
       );
-      Navigator.pushNamedAndRemoveUntil(
-        context,
-        Routes.languageSelection,
-        (r) => false,
-      );
+      Navigator.pushNamedAndRemoveUntil(context, Routes.home, (r) => false);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

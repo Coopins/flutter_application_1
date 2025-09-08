@@ -1,3 +1,4 @@
+// lib/screens/auth/create_account_form_screen.dart
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_application_1/routes.dart';
@@ -63,27 +64,24 @@ class _CreateAccountFormScreenState extends State<CreateAccountFormScreen> {
     HapticFeedback.selectionClick();
 
     try {
-      // Create account
       await AuthService.createAccount(
         email: _emailCtrl.text,
         password: _pwCtrl.text,
         displayName: _nameCtrl.text,
       );
 
-      // Save profile fields in Firestore
       await UserProfileService.createOrUpdateProfile(
         displayName: _nameCtrl.text,
         phoneNumber: _phoneCtrl.text,
       );
 
-      // Success → navigate
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Account created!')),
       );
       Navigator.pushNamedAndRemoveUntil(
         context,
-        Routes.languageSelection,
+        Routes.languageSelection, // ✅ new users go straight to language pick
         (r) => false,
       );
     } catch (e) {
@@ -118,9 +116,7 @@ class _CreateAccountFormScreenState extends State<CreateAccountFormScreen> {
                       controller: _nameCtrl,
                       autofillHints: const [AutofillHints.name],
                       textInputAction: TextInputAction.next,
-                      decoration: const InputDecoration(
-                        hintText: 'Your name',
-                      ),
+                      decoration: const InputDecoration(hintText: 'Your name'),
                       style: const TextStyle(color: Colors.white),
                     ),
                   ),
@@ -132,9 +128,8 @@ class _CreateAccountFormScreenState extends State<CreateAccountFormScreen> {
                       keyboardType: TextInputType.phone,
                       autofillHints: const [AutofillHints.telephoneNumber],
                       textInputAction: TextInputAction.next,
-                      decoration: const InputDecoration(
-                        hintText: '555-123-4567',
-                      ),
+                      decoration:
+                          const InputDecoration(hintText: '555-123-4567'),
                       style: const TextStyle(color: Colors.white),
                     ),
                   ),
@@ -147,9 +142,8 @@ class _CreateAccountFormScreenState extends State<CreateAccountFormScreen> {
                       autofillHints: const [AutofillHints.email],
                       textInputAction: TextInputAction.next,
                       validator: _vEmail,
-                      decoration: const InputDecoration(
-                        hintText: 'you@example.com',
-                      ),
+                      decoration:
+                          const InputDecoration(hintText: 'you@example.com'),
                       style: const TextStyle(color: Colors.white),
                     ),
                   ),
@@ -183,9 +177,7 @@ class _CreateAccountFormScreenState extends State<CreateAccountFormScreen> {
                       obscureText: _obscure,
                       autofillHints: const [AutofillHints.password],
                       validator: _vPw2,
-                      decoration: const InputDecoration(
-                        hintText: '••••••••',
-                      ),
+                      decoration: const InputDecoration(hintText: '••••••••'),
                       style: const TextStyle(color: Colors.white),
                     ),
                   ),

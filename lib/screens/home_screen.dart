@@ -1,4 +1,3 @@
-// lib/screens/home_screen.dart
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -8,11 +7,42 @@ import 'package:flutter_application_1/services/lesson_plan_storage.dart';
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
 
-  void _go(BuildContext context, String route) {
+  String _resolveCurrentLanguage(BuildContext context) {
+    final args = ModalRoute.of(context)?.settings.arguments;
+    if (args is Map && args['language'] is String) {
+      final v = (args['language'] as String).trim();
+      if (v.isNotEmpty) return v;
+    }
+    return 'Spanish';
+  }
+
+  String _ttsLocaleFor(String language) {
+    switch (language.toLowerCase()) {
+      case 'german':
+        return 'de-DE';
+      case 'french':
+        return 'fr-FR';
+      case 'italian':
+        return 'it-IT';
+      case 'portuguese':
+        return 'pt-BR';
+      case 'chinese':
+        return 'zh-CN';
+      case 'spanish':
+      default:
+        return 'es-ES';
+    }
+  }
+
+  void _go(
+    BuildContext context,
+    String route, {
+    Map<String, dynamic>? routeArguments,
+  }) {
     HapticFeedback.selectionClick();
     final navigator = Navigator.of(context);
     try {
-      navigator.pushNamed(route);
+      navigator.pushNamed(route, arguments: routeArguments);
     } catch (_) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -30,12 +60,13 @@ class HomeScreen extends StatelessWidget {
     String label,
     String route, {
     double iconSize = 48,
+    Map<String, dynamic>? routeArguments,
   }) {
     return Expanded(
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          onTap: () => _go(context, route),
+          onTap: () => _go(context, route, routeArguments: routeArguments),
           borderRadius: BorderRadius.circular(12),
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 20),
@@ -57,13 +88,13 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
-  /// Debug-only Firestore smoke test: creates a sample lesson plan and shows the new doc ID.
   Future<void> _debugSavePlanSmoke(BuildContext context) async {
     try {
+      final currentLanguage = _resolveCurrentLanguage(context);
       final id = await LessonPlanStorage.savePlan(
         markdown: '# Test Plan\n\nHello world.',
-        language: 'Spanish',
-        ttsLocale: 'es-ES',
+        language: currentLanguage,
+        ttsLocale: _ttsLocaleFor(currentLanguage),
       );
       HapticFeedback.lightImpact();
       // ignore: use_build_context_synchronously
@@ -86,18 +117,18 @@ class HomeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final currentLanguageName = _resolveCurrentLanguage(context);
+
     return Scaffold(
       backgroundColor: Colors.black,
-
-      // Floating debug button only visible in debug/profile builds.
-      floatingActionButton: kDebugMode
-          ? FloatingActionButton.extended(
-              onPressed: () => _debugSavePlanSmoke(context),
-              icon: const Icon(Icons.bug_report),
-              label: const Text('Debug Save Plan'),
-            )
-          : null,
-
+      floatingActionButton:
+          kDebugMode
+              ? FloatingActionButton.extended(
+                onPressed: () => _debugSavePlanSmoke(context),
+                icon: const Icon(Icons.bug_report),
+                label: const Text('Debug Save Plan'),
+              )
+              : null,
       body: SafeArea(
         child: Column(
           children: [
@@ -137,6 +168,9 @@ class HomeScreen extends StatelessWidget {
                   Icons.chat_bubble,
                   'Fluency Practice',
                   Routes.fluency,
+                  routeArguments: {
+                    'language': currentLanguageName,
+                  }, // pass language
                 ),
               ],
             ),
@@ -162,8 +196,6 @@ class HomeScreen extends StatelessWidget {
           ],
         ),
       ),
-
-      // Bottom bar stays safe-area aware.
       bottomNavigationBar: SafeArea(
         top: false,
         child: Material(
@@ -175,8 +207,8 @@ class HomeScreen extends StatelessWidget {
               children: [
                 IconButton(
                   tooltip: 'Home',
-                  onPressed: () =>
-                      Navigator.popUntil(context, (r) => r.isFirst),
+                  onPressed:
+                      () => Navigator.popUntil(context, (r) => r.isFirst),
                   icon: const Icon(Icons.home, size: 28, color: Colors.black),
                 ),
                 IconButton(

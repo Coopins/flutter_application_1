@@ -1,109 +1,50 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_application_1/routes.dart';
+import '../routes.dart';
 
-class LanguageSelectionScreen extends StatefulWidget {
+class LanguageSelectionScreen extends StatelessWidget {
   const LanguageSelectionScreen({super.key});
 
-  @override
-  State<LanguageSelectionScreen> createState() =>
-      _LanguageSelectionScreenState();
-}
-
-class _LanguageSelectionScreenState extends State<LanguageSelectionScreen> {
-  final List<String> _languages = const [
-    'Spanish',
-    'French',
-    'German',
-    'Chinese',
+  // Display name + flag for UI; we pass only the CODE to the next screen.
+  static const List<Map<String, String>> _languages = [
+    {"name": "Spanish", "code": "es", "ttsLocale": "es-ES", "flag": "🇪🇸"},
+    {"name": "Russian", "code": "ru", "ttsLocale": "ru-RU", "flag": "🇷🇺"},
+    {"name": "Portuguese", "code": "pt", "ttsLocale": "pt-BR", "flag": "🇧🇷"},
+    {"name": "Japanese", "code": "ja", "ttsLocale": "ja-JP", "flag": "🇯🇵"},
+    {"name": "Korean", "code": "ko", "ttsLocale": "ko-KR", "flag": "🇰🇷"},
+    {"name": "Romanian", "code": "ro", "ttsLocale": "ro-RO", "flag": "🇷🇴"},
+    {"name": "French", "code": "fr", "ttsLocale": "fr-FR", "flag": "🇫🇷"},
   ];
-  String? _selected;
-
-  String _ttsLocaleFor(String language) {
-    switch (language) {
-      case 'Spanish':
-        return 'es-ES';
-      case 'French':
-        return 'fr-FR';
-      case 'German':
-        return 'de-DE';
-      case 'Chinese':
-        return 'zh-CN';
-      default:
-        return 'en-US';
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.black,
-      appBar: AppBar(
-        backgroundColor: Colors.black,
-        elevation: 0,
-        title: const Text('Select Language'),
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          children: [
-            DropdownButtonFormField<String>(
-              value: _selected,
-              dropdownColor: const Color(0xFF1A1F29),
-              items:
-                  _languages
-                      .map(
-                        (l) => DropdownMenuItem(
-                          value: l,
-                          child: Text(
-                            l,
-                            style: const TextStyle(color: Colors.white),
-                          ),
-                        ),
-                      )
-                      .toList(),
-              decoration: InputDecoration(
-                labelText: 'Language',
-                labelStyle: const TextStyle(color: Colors.white70),
-                filled: true,
-                fillColor: const Color(0xFF141923),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
-              ),
-              onChanged: (v) => setState(() => _selected = v),
+      appBar: AppBar(title: const Text('Choose a language')),
+      body: ListView.separated(
+        padding: const EdgeInsets.all(16),
+        itemCount: _languages.length,
+        separatorBuilder: (_, __) => const SizedBox(height: 8),
+        itemBuilder: (context, index) {
+          final lang = _languages[index];
+          final name = lang['name']!;
+          final flag = lang['flag'] ?? '';
+          return ListTile(
+            tileColor: const Color(0xFF1C1C1C),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
             ),
-            const SizedBox(height: 20),
-            SizedBox(
-              width: double.infinity,
-              height: 52,
-              child: ElevatedButton.icon(
-                icon: const Icon(Icons.mic_none_rounded),
-                label: const Text('Continue'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF7C3AED),
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                onPressed:
-                    _selected == null
-                        ? null
-                        : () {
-                          final tts = _ttsLocaleFor(_selected!);
-                          Navigator.pushNamed(
-                            context,
-                            Routes.fluency,
-                            arguments: {
-                              'selectedLanguage': _selected!,
-                              'ttsLocale': tts,
-                            },
-                          );
-                        },
-              ),
-            ),
-          ],
-        ),
+            leading: Text(flag, style: const TextStyle(fontSize: 22)),
+            title: Text(name, style: const TextStyle(fontSize: 16)),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              Navigator.pushNamed(
+                context,
+                Routes.fluency,
+                // Pass the CODE only: 'es','ru','pt','ja','ko','ro','fr'
+                arguments: {'language': lang['code']},
+              );
+            },
+          );
+        },
       ),
     );
   }

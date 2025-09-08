@@ -1,12 +1,13 @@
 // lib/routes.dart
 class Routes {
-  static const main = '/';
-  static const createAccountForm = '/createAccountForm';
-  static const signIn = '/signIn';
-  static const languageSelection = '/languageSelection';
-  static const fluency = '/fluency';
-  static const lessonPlan = '/lessonPlan';
-  static const home = '/home';
-  static const profile = '/profile';
-  static const settings = '/settings'; // NEW
+  // Screens
+  static const String main = '/';
+  static const String createAccountForm = '/create-account';
+  static const String signIn = '/sign-in';
+  static const String languageSelection = '/language';
+  static const String fluency = '/fluency';
+  static const String lessonPlan = '/lesson-plan';
+  static const String home = '/home';
+  static const String profile = '/profile';
+  static const String settings = '/settings';
 }
