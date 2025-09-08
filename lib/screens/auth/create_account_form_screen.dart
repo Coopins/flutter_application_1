@@ -1,9 +1,10 @@
 // lib/screens/auth/create_account_form_screen.dart
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+
 import 'package:flutter_application_1/routes.dart';
-import 'package:flutter_application_1/services/auth_service.dart';
-import 'package:flutter_application_1/services/user_profile_service.dart';
 
 class CreateAccountFormScreen extends StatefulWidget {
   const CreateAccountFormScreen({super.key});
@@ -54,6 +55,22 @@ class _CreateAccountFormScreenState extends State<CreateAccountFormScreen> {
     return null;
   }
 
+  String _friendlyAuthError(Object e) {
+    if (e is! FirebaseAuthException) return 'Sign up failed. Please try again.';
+    switch (e.code) {
+      case 'email-already-in-use':
+        return 'Email is already in use';
+      case 'invalid-email':
+        return 'Invalid email';
+      case 'weak-password':
+        return 'Password is too weak';
+      case 'operation-not-allowed':
+        return 'Account creation is not allowed';
+      default:
+        return e.message ?? 'Sign up failed';
+    }
+  }
+
   Future<void> _submit() async {
     if (_loading) return;
     FocusScope.of(context).unfocus();
@@ -64,32 +81,61 @@ class _CreateAccountFormScreenState extends State<CreateAccountFormScreen> {
     HapticFeedback.selectionClick();
 
     try {
-      await AuthService.createAccount(
-        email: _emailCtrl.text,
-        password: _pwCtrl.text,
-        displayName: _nameCtrl.text,
+      final email = _emailCtrl.text.trim();
+      final password = _pwCtrl.text; // never store this
+      final name = _nameCtrl.text.trim();
+      final phone = _phoneCtrl.text.trim();
+
+      // 1) Create Firebase Auth user
+      final cred = await FirebaseAuth.instance.createUserWithEmailAndPassword(
+        email: email,
+        password: password,
       );
 
-      await UserProfileService.createOrUpdateProfile(
-        displayName: _nameCtrl.text,
-        phoneNumber: _phoneCtrl.text,
-      );
+      final user = cred.user;
+      if (user == null) {
+        throw FirebaseAuthException(
+          code: 'internal-error',
+          message: 'User creation returned null user.',
+        );
+      }
+
+      // 2) Optional: displayName in Auth profile
+      if (name.isNotEmpty) {
+        await user.updateDisplayName(name);
+      }
+
+      // 3) Create/merge Firestore profile (no password saved)
+      final now = FieldValue.serverTimestamp();
+      final profile = <String, dynamic>{
+        'email': user.email,
+        'provider': 'password',
+        'createdAt': now,
+        'updatedAt': now,
+      };
+      if (name.isNotEmpty) profile['name'] = name;
+      if (phone.isNotEmpty) profile['phone'] = phone;
+
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .set(profile, SetOptions(merge: true));
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Account created!')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Account created!')));
+
+      // 4) Send new users to language picker
       Navigator.pushNamedAndRemoveUntil(
         context,
-        Routes.languageSelection, // ✅ new users go straight to language pick
+        Routes.languageSelection,
         (r) => false,
       );
     } catch (e) {
       if (!mounted) return;
-      final msg = AuthService.explain(e);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(msg)),
-      );
+      final msg = _friendlyAuthError(e);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -128,8 +174,9 @@ class _CreateAccountFormScreenState extends State<CreateAccountFormScreen> {
                       keyboardType: TextInputType.phone,
                       autofillHints: const [AutofillHints.telephoneNumber],
                       textInputAction: TextInputAction.next,
-                      decoration:
-                          const InputDecoration(hintText: '555-123-4567'),
+                      decoration: const InputDecoration(
+                        hintText: '555-123-4567',
+                      ),
                       style: const TextStyle(color: Colors.white),
                     ),
                   ),
@@ -142,8 +189,9 @@ class _CreateAccountFormScreenState extends State<CreateAccountFormScreen> {
                       autofillHints: const [AutofillHints.email],
                       textInputAction: TextInputAction.next,
                       validator: _vEmail,
-                      decoration:
-                          const InputDecoration(hintText: 'you@example.com'),
+                      decoration: const InputDecoration(
+                        hintText: 'you@example.com',
+                      ),
                       style: const TextStyle(color: Colors.white),
                     ),
                   ),
@@ -191,15 +239,20 @@ class _CreateAccountFormScreenState extends State<CreateAccountFormScreen> {
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(vertical: 14),
                       ),
-                      child: _loading
-                          ? const SizedBox(
-                              height: 20,
-                              width: 20,
-                              child: CircularProgressIndicator(
-                                  strokeWidth: 2, color: Colors.white),
-                            )
-                          : const Text('Create Account',
-                              style: TextStyle(fontSize: 16)),
+                      child:
+                          _loading
+                              ? const SizedBox(
+                                height: 20,
+                                width: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                              : const Text(
+                                'Create Account',
+                                style: TextStyle(fontSize: 16),
+                              ),
                     ),
                   ),
                   const SizedBox(height: 12),
@@ -230,9 +283,13 @@ class _LabeledField extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label,
-            style: const TextStyle(
-                color: Colors.white70, fontWeight: FontWeight.w600)),
+        Text(
+          label,
+          style: const TextStyle(
+            color: Colors.white70,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
         const SizedBox(height: 6),
         Theme(
           data: Theme.of(context).copyWith(
