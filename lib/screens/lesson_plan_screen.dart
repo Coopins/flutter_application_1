@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show RenderAbstractViewport;
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import '../routes.dart';
@@ -14,6 +15,7 @@ class LessonPlanScreen extends StatefulWidget {
 
 class _LessonPlanScreenState extends State<LessonPlanScreen> {
   final FlutterTts _tts = FlutterTts();
+  final ScrollController _scroll = ScrollController();
   bool _isSpeaking = false;
 
   String? _fullMarkdown;
@@ -23,9 +25,15 @@ class _LessonPlanScreenState extends State<LessonPlanScreen> {
   // Parsed sections
   List<_PlanSection> _sections = [];
 
+  // Jump-to & "remember" state (session only)
+  final Map<String, GlobalKey> _sectionKeys = {};
+  static String? _lastOpenTitle;
+  static final Map<String, bool> _expandedMemory = {}; // title -> expanded
+
   @override
   void dispose() {
     _tts.stop();
+    _scroll.dispose();
     super.dispose();
   }
 
@@ -33,7 +41,9 @@ class _LessonPlanScreenState extends State<LessonPlanScreen> {
 
   Future<DocumentSnapshot<Map<String, dynamic>>?> _loadLatest() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return null;
+    if (uid == null) {
+      return null;
+    }
 
     final snap =
         await FirebaseFirestore.instance
@@ -44,13 +54,17 @@ class _LessonPlanScreenState extends State<LessonPlanScreen> {
             .limit(1)
             .get();
 
-    if (snap.docs.isEmpty) return null;
+    if (snap.docs.isEmpty) {
+      return null;
+    }
     return snap.docs.first;
   }
 
   Future<DocumentSnapshot<Map<String, dynamic>>?> _loadById(String id) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null || id.isEmpty) return null;
+    if (uid == null || id.isEmpty) {
+      return null;
+    }
 
     final doc =
         await FirebaseFirestore.instance
@@ -144,7 +158,9 @@ class _LessonPlanScreenState extends State<LessonPlanScreen> {
         context,
       ).showSnackBar(SnackBar(content: Text('TTS error: $e')));
     } finally {
-      if (mounted) setState(() => _isSpeaking = false);
+      if (mounted) {
+        setState(() => _isSpeaking = false);
+      }
     }
   }
 
@@ -161,7 +177,9 @@ class _LessonPlanScreenState extends State<LessonPlanScreen> {
 
   Future<void> _stopSpeaking() async {
     await _tts.stop();
-    if (mounted) setState(() => _isSpeaking = false);
+    if (mounted) {
+      setState(() => _isSpeaking = false);
+    }
   }
 
   // -------- Markdown parsing into sections --------
@@ -271,8 +289,9 @@ class _LessonPlanScreenState extends State<LessonPlanScreen> {
     if (t.contains('grammar')) return 'Grammar Bite';
     if (t.contains('drill')) return 'Drills';
     if (t.contains('comprehension')) return 'Comprehension Checks';
-    if (t.contains('homework') || t.contains('practice at home'))
+    if (t.contains('homework') || t.contains('practice at home')) {
       return 'Homework';
+    }
     if (t.contains('goal')) return 'Goals';
     if (t.contains('summary')) return 'Summary';
     if (t.contains('overview') || t.contains('lesson plan')) return 'Overview';
@@ -284,43 +303,101 @@ class _LessonPlanScreenState extends State<LessonPlanScreen> {
       .map((w) => w.isEmpty ? '' : '${w[0].toUpperCase()}${w.substring(1)}')
       .join(' ');
 
+  // -------- precise scroll helper (fixes chips not jumping) --------
+
+  void _scrollToTitle(String title) {
+    final key = _sectionKeys[title];
+    if (key == null) {
+      return;
+    }
+
+    // Wait until layout is ready for a stable render box.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final ctx = key.currentContext;
+      if (ctx == null) {
+        return;
+      }
+      final ro = ctx.findRenderObject();
+      if (ro is! RenderObject) {
+        return;
+      }
+
+      final viewport = RenderAbstractViewport.of(ro);
+      if (!_scroll.hasClients) {
+        return;
+      }
+
+      // 0.1 aligns the section slightly below the top for context.
+      final target = viewport.getOffsetToReveal(ro, 0.10).offset;
+
+      // Clamp to scroll range and animate.
+      final min = _scroll.position.minScrollExtent;
+      final max = _scroll.position.maxScrollExtent;
+      final clamped = target.clamp(min, max);
+
+      _scroll.animateTo(
+        clamped,
+        duration: const Duration(milliseconds: 350),
+        curve: Curves.easeInOut,
+      );
+    });
+  }
+
   // -------- UI --------
 
   @override
   Widget build(BuildContext context) {
-    // Accept optional docId from navigation
+    // Accept optional docId & focusSection from navigation
     String? docId;
+    String? focusSection;
     final args = ModalRoute.of(context)?.settings.arguments;
-    if (args is Map && args['docId'] is String) {
-      final v = (args['docId'] as String).trim();
-      docId = v.isEmpty ? null : v;
+    if (args is Map) {
+      if (args['docId'] is String) {
+        final v = (args['docId'] as String).trim();
+        docId = v.isEmpty ? null : v;
+      }
+      if (args['focusSection'] is String) {
+        focusSection = _canon(args['focusSection'] as String);
+      }
     }
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('My Lesson Plan'),
         actions: [
-          IconButton(
-            tooltip: 'Play',
-            icon: const Icon(Icons.play_arrow),
-            onPressed:
-                _isSpeaking || _fullMarkdown == null ? null : _speakFullPlan,
+          Semantics(
+            label: 'Play full plan',
+            button: true,
+            child: IconButton(
+              tooltip: 'Play',
+              icon: const Icon(Icons.play_arrow),
+              onPressed:
+                  _isSpeaking || _fullMarkdown == null ? null : _speakFullPlan,
+            ),
           ),
-          IconButton(
-            tooltip: 'Stop',
-            icon: const Icon(Icons.stop),
-            onPressed: _isSpeaking ? _stopSpeaking : null,
+          Semantics(
+            label: 'Stop speaking',
+            button: true,
+            child: IconButton(
+              tooltip: 'Stop',
+              icon: const Icon(Icons.stop),
+              onPressed: _isSpeaking ? _stopSpeaking : null,
+            ),
           ),
-          IconButton(
-            tooltip: 'Home',
-            icon: const Icon(Icons.home_outlined),
-            onPressed: () {
-              Navigator.pushNamedAndRemoveUntil(
-                context,
-                Routes.home,
-                (_) => false,
-              );
-            },
+          Semantics(
+            label: 'Go home',
+            button: true,
+            child: IconButton(
+              tooltip: 'Home',
+              icon: const Icon(Icons.home_outlined),
+              onPressed: () {
+                Navigator.pushNamedAndRemoveUntil(
+                  context,
+                  Routes.home,
+                  (_) => false,
+                );
+              },
+            ),
           ),
         ],
       ),
@@ -344,9 +421,24 @@ class _LessonPlanScreenState extends State<LessonPlanScreen> {
           _fullMarkdown = md;
           _sections = _splitMarkdownToSections(md);
 
+          // Build keys for jump targets
+          _sectionKeys.clear();
+          for (final s in _sections) {
+            _sectionKeys[s.title] = GlobalKey();
+          }
+
+          // Auto-focus requested section (or last-open) once built
+          final desired = focusSection ?? _lastOpenTitle;
+          if (desired != null) {
+            WidgetsBinding.instance.addPostFrameCallback(
+              (_) => _scrollToTitle(desired),
+            );
+          }
+
           return Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
             child: ListView(
+              controller: _scroll,
               children: [
                 Center(
                   child: Text(
@@ -360,9 +452,30 @@ class _LessonPlanScreenState extends State<LessonPlanScreen> {
                   style: Theme.of(context).textTheme.headlineMedium,
                 ),
                 const SizedBox(height: 12),
+
+                // Contents chips (jump-to-section)
+                _ContentsChips(
+                  titles: _sections.map((e) => e.title).toList(),
+                  onTapTitle: (title) {
+                    _lastOpenTitle = title;
+                    _scrollToTitle(title);
+                    setState(() {}); // refresh selected state
+                  },
+                  selectedTitle: _lastOpenTitle,
+                ),
+                const SizedBox(height: 8),
+
                 ..._sections.map(
                   (s) => _SectionCard(
+                    containerKey: _sectionKeys[s.title]!,
                     section: s,
+                    initiallyExpanded: _expandedMemory[s.title] ?? true,
+                    onExpandedChanged: (expanded) {
+                      _expandedMemory[s.title] = expanded;
+                      if (expanded) {
+                        _lastOpenTitle = s.title;
+                      }
+                    },
                     onListen: () => _speakSection(s),
                   ),
                 ),
@@ -375,20 +488,78 @@ class _LessonPlanScreenState extends State<LessonPlanScreen> {
   }
 }
 
+// ===== Contents chips =====
+
+class _ContentsChips extends StatelessWidget {
+  const _ContentsChips({
+    required this.titles,
+    required this.onTapTitle,
+    required this.selectedTitle,
+  });
+
+  final List<String> titles;
+  final void Function(String title) onTapTitle;
+  final String? selectedTitle;
+
+  @override
+  Widget build(BuildContext context) {
+    if (titles.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Semantics(
+      label: 'Contents',
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children:
+              titles.map((t) {
+                final sel = t == selectedTitle;
+                return Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: ChoiceChip(
+                    label: Text(t),
+                    selected: sel,
+                    onSelected: (_) => onTapTitle(t),
+                    materialTapTargetSize: MaterialTapTargetSize.padded,
+                  ),
+                );
+              }).toList(),
+        ),
+      ),
+    );
+  }
+}
+
 // ===== Section UI =====
 
 class _SectionCard extends StatefulWidget {
-  const _SectionCard({required this.section, required this.onListen});
+  const _SectionCard({
+    required this.containerKey,
+    required this.section,
+    required this.onListen,
+    required this.initiallyExpanded,
+    required this.onExpandedChanged,
+  });
 
+  final GlobalKey containerKey;
   final _PlanSection section;
   final VoidCallback onListen;
+  final bool initiallyExpanded;
+  final ValueChanged<bool> onExpandedChanged;
 
   @override
   State<_SectionCard> createState() => _SectionCardState();
 }
 
 class _SectionCardState extends State<_SectionCard> {
-  bool _expanded = true; // start expanded for better discoverability
+  late bool _expanded;
+
+  @override
+  void initState() {
+    super.initState();
+    _expanded = widget.initiallyExpanded;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -397,6 +568,7 @@ class _SectionCardState extends State<_SectionCard> {
     final onSurface = scheme.onSurface.withValues(alpha: 0.86);
 
     return Container(
+      key: widget.containerKey,
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
         color: surface.withValues(alpha: 0.08),
@@ -407,7 +579,10 @@ class _SectionCardState extends State<_SectionCard> {
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
           initiallyExpanded: _expanded,
-          onExpansionChanged: (v) => setState(() => _expanded = v),
+          onExpansionChanged: (v) {
+            setState(() => _expanded = v);
+            widget.onExpandedChanged(v);
+          },
           tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
           title: Text(
@@ -448,12 +623,16 @@ class _SectionCardState extends State<_SectionCard> {
                     ),
                   ),
                   const SizedBox(height: 8),
-                  TextButton.icon(
-                    onPressed: widget.onListen,
-                    icon: const Icon(Icons.volume_up),
-                    label: const Text('Listen'),
-                    style: TextButton.styleFrom(
-                      foregroundColor: Theme.of(context).colorScheme.primary,
+                  Semantics(
+                    label: 'Listen to ${widget.section.title}',
+                    button: true,
+                    child: TextButton.icon(
+                      onPressed: widget.onListen,
+                      icon: const Icon(Icons.volume_up),
+                      label: const Text('Listen'),
+                      style: TextButton.styleFrom(
+                        foregroundColor: Theme.of(context).colorScheme.primary,
+                      ),
                     ),
                   ),
                 ],
