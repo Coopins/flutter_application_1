@@ -3,7 +3,7 @@
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- ===== Permissions (top-level) ===== -->
+    <!-- ===== Permissions ===== -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
@@ -12,14 +12,19 @@
         tools:targetApi="34" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
 
+    <!-- Let the app install & run on devices/emulators without a physical mic. -->
+    <uses-feature
+        android:name="android.hardware.microphone"
+        android:required="false" />
+
     <application
         android:name="${applicationName}"
         android:label="flutter_application_1"
         android:icon="@mipmap/ic_launcher"
         android:enableOnBackInvokedCallback="true"
         android:usesCleartextTraffic="false">
-        <!-- quiets the emulator back-invoke warning -->
 
+        <!-- Main Flutter activity -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -47,11 +52,23 @@
             android:value="2" />
     </application>
 
-    <!-- Package visibility for PROCESS_TEXT (used by Flutter text plugins) -->
+    <!-- ===== Package visibility (Android 11+) =====
+         Allow resolving system speech services & intents that speech_to_text uses. -->
     <queries>
+        <!-- You already had PROCESS_TEXT; keep it. -->
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT" />
             <data android:mimeType="text/plain" />
+        </intent>
+
+        <!-- Speech recognition service providers (e.g., Google, Samsung, etc.) -->
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
+
+        <!-- Explicitly allow resolving the standard speech recognition activity intent -->
+        <intent>
+            <action android:name="android.speech.action.RECOGNIZE_SPEECH" />
         </intent>
     </queries>
 </manifest>
