@@ -5,7 +5,6 @@ publish_to: "none"
 version: 1.0.0+1
 
 environment:
-  # Match your lock's SDKs to avoid resolution drift
   sdk: ">=3.7.0 <4.0.0"
   flutter: ">=3.29.0"
 
@@ -13,32 +12,36 @@ dependencies:
   flutter:
     sdk: flutter
 
-  cupertino_icons: 1.0.8
-
-  # --- Firebase (pin to lock versions) ---
-  firebase_core: 3.15.2
-  firebase_auth: 5.7.0
-  cloud_firestore: 5.6.12
-
-  # --- Speech to Text / permissions (pin) ---
-  speech_to_text: 7.3.0
-  permission_handler: 11.4.0
-
-  # --- Recording (optional; you already have it pinned in lock) ---
-  record: 6.1.1
-
-  # --- Text-to-Speech (pin) ---
-  flutter_tts: 3.8.5
-
-  # --- UI / Markdown (pin) ---
-  flutter_markdown: 0.7.7+1
-
-  # --- Utils (pin) ---
+  # ---- Core / utils ----
+  uuid: ^4.2.2
+  cupertino_icons: ^1.0.8
   http: 1.5.0
+  http_parser: ^4.1.2
+  flutter_dotenv: ^6.0.0
   path_provider: 2.1.5
   path: 1.9.1
-  flutter_dotenv: 5.2.1
-  http_parser: ^4.1.2
+
+  # ---- Firebase (pinned) ----
+  firebase_core: ^4.1.0
+  firebase_auth: ^6.0.2
+  cloud_firestore: ^6.0.1
+
+  # ---- Permissions ----
+  permission_handler: ^12.0.1
+
+  # ---- Recording (used elsewhere) ----
+  record: 6.1.1
+
+  # ---- On-device ASR for CategoryChat ----
+  speech_to_text: ^7.3.0
+
+  # ---- TTS ----
+  flutter_tts: ^4.2.3
+
+  # ---- UI / playback ----
+  flutter_markdown: 0.7.7+1
+  audioplayers: ^6.5.1
+  audio_session: ^0.2.2
 
 dev_dependencies:
   flutter_test:

@@ -1,10 +1,17 @@
+// lib/screens/lesson_plan_screen.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show RenderAbstractViewport;
-import 'package:flutter_tts/flutter_tts.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:flutter_tts/flutter_tts.dart';
+
+import '../models/category.dart';
+import '../models/phrase.dart';
+import '../models/vocab.dart';
 import '../routes.dart';
+import '../services/category_repository.dart';
+import 'category_chat_screen.dart';
 
 class LessonPlanScreen extends StatefulWidget {
   const LessonPlanScreen({super.key});
@@ -16,6 +23,7 @@ class LessonPlanScreen extends StatefulWidget {
 class _LessonPlanScreenState extends State<LessonPlanScreen> {
   final FlutterTts _tts = FlutterTts();
   final ScrollController _scroll = ScrollController();
+
   bool _isSpeaking = false;
 
   String? _fullMarkdown;
@@ -41,9 +49,7 @@ class _LessonPlanScreenState extends State<LessonPlanScreen> {
 
   Future<DocumentSnapshot<Map<String, dynamic>>?> _loadLatest() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) {
-      return null;
-    }
+    if (uid == null) return null;
 
     final snap =
         await FirebaseFirestore.instance
@@ -54,17 +60,13 @@ class _LessonPlanScreenState extends State<LessonPlanScreen> {
             .limit(1)
             .get();
 
-    if (snap.docs.isEmpty) {
-      return null;
-    }
+    if (snap.docs.isEmpty) return null;
     return snap.docs.first;
   }
 
   Future<DocumentSnapshot<Map<String, dynamic>>?> _loadById(String id) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null || id.isEmpty) {
-      return null;
-    }
+    if (uid == null || id.isEmpty) return null;
 
     final doc =
         await FirebaseFirestore.instance
@@ -117,7 +119,6 @@ class _LessonPlanScreenState extends State<LessonPlanScreen> {
   String _markdownToSpeech(String md) {
     var t = md;
 
-    // Analyzer-friendly regexes (no inline (?m) flags)
     final heading = RegExp(r'^\s{0,3}#{1,6}\s+', multiLine: true);
     final bold = RegExp(r'\*\*([^*]+)\*\*');
     final ital = RegExp(r'\*([^*\n]+)\*');
@@ -141,16 +142,14 @@ class _LessonPlanScreenState extends State<LessonPlanScreen> {
   }
 
   Future<void> _speakText(String text) async {
-    if (text.trim().isEmpty) {
-      return;
-    }
+    if (text.trim().isEmpty) return;
     try {
       await _tts.stop();
       await _tts.setLanguage(_ttsLocale ?? 'en-US');
       await _tts.setSpeechRate(0.47);
       await _tts.setPitch(1.0);
       await _tts.awaitSpeakCompletion(true);
-      setState(() => _isSpeaking = true);
+      if (mounted) setState(() => _isSpeaking = true);
       await _tts.speak(text);
     } catch (e) {
       if (!mounted) return;
@@ -158,16 +157,12 @@ class _LessonPlanScreenState extends State<LessonPlanScreen> {
         context,
       ).showSnackBar(SnackBar(content: Text('TTS error: $e')));
     } finally {
-      if (mounted) {
-        setState(() => _isSpeaking = false);
-      }
+      if (mounted) setState(() => _isSpeaking = false);
     }
   }
 
   Future<void> _speakFullPlan() async {
-    if (_fullMarkdown == null) {
-      return;
-    }
+    if (_fullMarkdown == null) return;
     await _speakText(_markdownToSpeech(_fullMarkdown!));
   }
 
@@ -177,9 +172,7 @@ class _LessonPlanScreenState extends State<LessonPlanScreen> {
 
   Future<void> _stopSpeaking() async {
     await _tts.stop();
-    if (mounted) {
-      setState(() => _isSpeaking = false);
-    }
+    if (mounted) setState(() => _isSpeaking = false);
   }
 
   // -------- Markdown parsing into sections --------
@@ -213,7 +206,6 @@ class _LessonPlanScreenState extends State<LessonPlanScreen> {
     for (final line in lines) {
       final m = headerRx.firstMatch(line);
       if (m != null) {
-        // flush previous
         if (currentTitle != null) {
           raw.add(
             _PlanSection(
@@ -235,7 +227,6 @@ class _LessonPlanScreenState extends State<LessonPlanScreen> {
         buffer.writeln(line);
       }
     }
-    // flush tail
     if (currentTitle != null) {
       raw.add(
         _PlanSection(title: currentTitle, content: buffer.toString().trim()),
@@ -248,7 +239,6 @@ class _LessonPlanScreenState extends State<LessonPlanScreen> {
       }
     }
 
-    // Normalize titles & order
     for (var i = 0; i < raw.length; i++) {
       raw[i] = raw[i].copyWith(title: _canon(raw[i].title));
     }
@@ -261,7 +251,6 @@ class _LessonPlanScreenState extends State<LessonPlanScreen> {
       return aa.compareTo(bb);
     });
 
-    // Merge duplicates
     final List<_PlanSection> merged = [];
     for (final s in raw) {
       if (merged.isNotEmpty &&
@@ -289,9 +278,8 @@ class _LessonPlanScreenState extends State<LessonPlanScreen> {
     if (t.contains('grammar')) return 'Grammar Bite';
     if (t.contains('drill')) return 'Drills';
     if (t.contains('comprehension')) return 'Comprehension Checks';
-    if (t.contains('homework') || t.contains('practice at home')) {
+    if (t.contains('homework') || t.contains('practice at home'))
       return 'Homework';
-    }
     if (t.contains('goal')) return 'Goals';
     if (t.contains('summary')) return 'Summary';
     if (t.contains('overview') || t.contains('lesson plan')) return 'Overview';
@@ -303,34 +291,22 @@ class _LessonPlanScreenState extends State<LessonPlanScreen> {
       .map((w) => w.isEmpty ? '' : '${w[0].toUpperCase()}${w.substring(1)}')
       .join(' ');
 
-  // -------- precise scroll helper (fixes chips not jumping) --------
+  // -------- precise scroll helper --------
 
   void _scrollToTitle(String title) {
     final key = _sectionKeys[title];
-    if (key == null) {
-      return;
-    }
+    if (key == null) return;
 
-    // Wait until layout is ready for a stable render box.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final ctx = key.currentContext;
-      if (ctx == null) {
-        return;
-      }
+      if (ctx == null) return;
       final ro = ctx.findRenderObject();
-      if (ro is! RenderObject) {
-        return;
-      }
+      if (ro is! RenderObject) return;
 
       final viewport = RenderAbstractViewport.of(ro);
-      if (!_scroll.hasClients) {
-        return;
-      }
+      if (!_scroll.hasClients) return;
 
-      // 0.1 aligns the section slightly below the top for context.
       final target = viewport.getOffsetToReveal(ro, 0.10).offset;
-
-      // Clamp to scroll range and animate.
       final min = _scroll.position.minScrollExtent;
       final max = _scroll.position.maxScrollExtent;
       final clamped = target.clamp(min, max);
@@ -347,7 +323,6 @@ class _LessonPlanScreenState extends State<LessonPlanScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Accept optional docId & focusSection from navigation
     String? docId;
     String? focusSection;
     final args = ModalRoute.of(context)?.settings.arguments;
@@ -413,7 +388,8 @@ class _LessonPlanScreenState extends State<LessonPlanScreen> {
           }
           final data = doc.data()!;
           final langCode = (data['language'] ?? 'en') as String;
-          final md = (data['markdown'] ?? '') as String;
+          final md =
+              (data['markdown'] ?? data['classicMarkdown'] ?? '') as String;
           final savedLocale = data['ttsLocale'] as String?;
 
           _langLabel = _labelFromCode(langCode);
@@ -421,19 +397,20 @@ class _LessonPlanScreenState extends State<LessonPlanScreen> {
           _fullMarkdown = md;
           _sections = _splitMarkdownToSections(md);
 
-          // Build keys for jump targets
           _sectionKeys.clear();
           for (final s in _sections) {
             _sectionKeys[s.title] = GlobalKey();
           }
 
-          // Auto-focus requested section (or last-open) once built
           final desired = focusSection ?? _lastOpenTitle;
           if (desired != null) {
             WidgetsBinding.instance.addPostFrameCallback(
               (_) => _scrollToTitle(desired),
             );
           }
+
+          final uid = FirebaseAuth.instance.currentUser!.uid;
+          final repo = CategoryRepository(FirebaseFirestore.instance);
 
           return Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
@@ -442,29 +419,230 @@ class _LessonPlanScreenState extends State<LessonPlanScreen> {
               children: [
                 Center(
                   child: Text(
-                    'Latest plan – $_langLabel',
+                    'Personalized Lesson Plan – $_langLabel',
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                 ),
-                const SizedBox(height: 12),
-                Text(
-                  'Personalized Lesson Plan',
-                  style: Theme.of(context).textTheme.headlineMedium,
-                ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 10),
 
-                // Contents chips (jump-to-section)
-                _ContentsChips(
-                  titles: _sections.map((e) => e.title).toList(),
-                  onTapTitle: (title) {
-                    _lastOpenTitle = title;
-                    _scrollToTitle(title);
-                    setState(() {}); // refresh selected state
-                  },
-                  selectedTitle: _lastOpenTitle,
+                Row(
+                  children: [
+                    Text(
+                      'Categories',
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Divider(
+                        height: 1,
+                        thickness: 1,
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.outlineVariant.withValues(alpha: 0.5),
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 8),
 
+                StreamBuilder<List<Category>>(
+                  stream: repo.watch(uid, doc.id),
+                  builder: (context, snap) {
+                    final chips = <Widget>[];
+
+                    // De-dupe live categories by case-insensitive name
+                    final live = snap.data ?? const <Category>[];
+                    final byName = <String, Category>{};
+                    for (final c in live) {
+                      final key = c.name.trim().toLowerCase();
+                      if (!byName.containsKey(key)) {
+                        byName[key] = c;
+                      } else {
+                        // Prefer lower order if duplicates exist
+                        if (c.order < byName[key]!.order) {
+                          byName[key] = c;
+                        }
+                      }
+                    }
+                    final liveUnique =
+                        byName.values.toList()
+                          ..sort((a, b) => a.order.compareTo(b.order));
+
+                    final existingNames =
+                        liveUnique
+                            .map((c) => c.name.trim().toLowerCase())
+                            .toSet();
+
+                    if (snap.connectionState == ConnectionState.waiting) {
+                      chips.add(
+                        const Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 6),
+                          child: SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        ),
+                      );
+                    }
+
+                    // Render existing categories (unique)
+                    chips.addAll(
+                      liveUnique.map(
+                        (c) => Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: ActionChip(
+                            label: Text(c.name),
+                            onPressed: () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder:
+                                      (_) => CategoryChatScreen(
+                                        categoryId: c.id,
+                                        categoryTitle: c.name, // chip title
+                                        languageLabel:
+                                            _langLabel, // chosen language label
+                                        systemPromptForCategory:
+                                            c.chatSystemPrompt ??
+                                            'You are Gabi. Stay within the “${c.name}” topic and keep replies concise, scaffolded, and encouraging.',
+                                        ttsLocale: _ttsLocale ?? 'en-US',
+                                      ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ),
+                    );
+
+                    // Suggested categories (no '+')
+                    final suggested = <_SuggestedCategory>[
+                      _SuggestedCategory.hardcoded(
+                        'Hobbies',
+                        goals: const ['Discuss hobbies', 'Ask about interests'],
+                        phrases: const [
+                          Phrase(phrase: 'Me gusta…', translation: 'I like…'),
+                          Phrase(
+                            phrase: '¿Qué te gusta hacer?',
+                            translation: 'What do you like to do?',
+                          ),
+                        ],
+                        vocab: const [
+                          Vocab(term: 'leer', translation: 'to read'),
+                          Vocab(term: 'deportes', translation: 'sports'),
+                        ],
+                        tasks: const [
+                          'Tell Gabi about two hobbies you enjoy.',
+                          'Ask Gabi about a hobby and follow up with a question.',
+                        ],
+                        prompt:
+                            'You are Gabi. Coach only within hobbies and interests.',
+                      ),
+                      _SuggestedCategory.hardcoded(
+                        'Travel',
+                        goals: const ['Ask for directions', 'Book tickets'],
+                        phrases: const [
+                          Phrase(
+                            phrase: '¿Dónde está…?',
+                            translation: 'Where is…?',
+                          ),
+                        ],
+                        vocab: const [
+                          Vocab(term: 'billete', translation: 'ticket'),
+                          Vocab(term: 'estación', translation: 'station'),
+                        ],
+                        tasks: const [
+                          'Ask for directions to a museum.',
+                          'Book a train ticket for tomorrow.',
+                        ],
+                        prompt:
+                            'You are Gabi. Coach only travel scenarios (directions, tickets, hotels).',
+                      ),
+                      _SuggestedCategory.hardcoded(
+                        'Shopping',
+                        goals: const ['Ask prices', 'Compare items'],
+                        phrases: const [
+                          Phrase(
+                            phrase: '¿Cuánto cuesta?',
+                            translation: 'How much is it?',
+                          ),
+                        ],
+                        vocab: const [
+                          Vocab(term: 'caro', translation: 'expensive'),
+                          Vocab(term: 'barato', translation: 'cheap'),
+                        ],
+                        tasks: const [
+                          'Ask the price of two items and compare them.',
+                        ],
+                        prompt:
+                            'You are Gabi. Coach only shopping and bargaining conversations.',
+                      ),
+                      _SuggestedCategory.hardcoded(
+                        'Directions',
+                        goals: const ['Follow and give directions'],
+                        phrases: const [
+                          Phrase(
+                            phrase: 'a la derecha',
+                            translation: 'to the right',
+                          ),
+                        ],
+                        vocab: const [
+                          Vocab(term: 'esquina', translation: 'corner'),
+                        ],
+                        tasks: const [
+                          'Ask Gabi for directions to a café and repeat them back.',
+                        ],
+                        prompt:
+                            'You are Gabi. Coach only directions and navigation.',
+                      ),
+                    ];
+
+                    for (final s in suggested) {
+                      if (!existingNames.contains(s.name.toLowerCase())) {
+                        chips.add(
+                          Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: ActionChip(
+                              label: Text(s.name),
+                              onPressed: () async {
+                                final nav = Navigator.of(context);
+                                final created = await _createSuggestedCategory(
+                                  uid,
+                                  doc.id,
+                                  s,
+                                );
+                                if (!mounted) return;
+                                nav.push(
+                                  MaterialPageRoute(
+                                    builder:
+                                        (_) => CategoryChatScreen(
+                                          categoryId: created.id,
+                                          categoryTitle: created.name,
+                                          languageLabel: _langLabel,
+                                          systemPromptForCategory:
+                                              created.chatSystemPrompt ??
+                                              'You are Gabi. Stay within the “${created.name}” topic and keep replies concise, scaffolded, and encouraging.',
+                                          ttsLocale: _ttsLocale ?? 'en-US',
+                                        ),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                        );
+                      }
+                    }
+
+                    return SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(children: chips),
+                    );
+                  },
+                ),
+
+                const SizedBox(height: 16),
+
+                // Sections
                 ..._sections.map(
                   (s) => _SectionCard(
                     containerKey: _sectionKeys[s.title]!,
@@ -472,9 +650,7 @@ class _LessonPlanScreenState extends State<LessonPlanScreen> {
                     initiallyExpanded: _expandedMemory[s.title] ?? true,
                     onExpandedChanged: (expanded) {
                       _expandedMemory[s.title] = expanded;
-                      if (expanded) {
-                        _lastOpenTitle = s.title;
-                      }
+                      if (expanded) _lastOpenTitle = s.title;
                     },
                     onListen: () => _speakSection(s),
                   ),
@@ -486,49 +662,50 @@ class _LessonPlanScreenState extends State<LessonPlanScreen> {
       ),
     );
   }
+
+  Future<Category> _createSuggestedCategory(
+    String uid,
+    String planId,
+    _SuggestedCategory s,
+  ) async {
+    final repo = CategoryRepository(FirebaseFirestore.instance);
+    final cat = Category(
+      id: s.id,
+      name: s.name,
+      order: s.order,
+      goals: s.goals,
+      keyPhrases: s.phrases,
+      vocab: s.vocab,
+      practiceTasks: s.tasks,
+      chatSystemPrompt: s.prompt,
+    );
+    await repo.upsert(uid, planId, cat);
+    return cat;
+  }
 }
 
-// ===== Contents chips =====
+// --- helpers for suggested create-on-tap
+class _SuggestedCategory {
+  final String id;
+  final String name;
+  final int order;
+  final List<String> goals;
+  final List<Phrase> phrases;
+  final List<Vocab> vocab;
+  final List<String> tasks;
+  final String prompt;
 
-class _ContentsChips extends StatelessWidget {
-  const _ContentsChips({
-    required this.titles,
-    required this.onTapTitle,
-    required this.selectedTitle,
-  });
-
-  final List<String> titles;
-  final void Function(String title) onTapTitle;
-  final String? selectedTitle;
-
-  @override
-  Widget build(BuildContext context) {
-    if (titles.isEmpty) {
-      return const SizedBox.shrink();
-    }
-
-    return Semantics(
-      label: 'Contents',
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          children:
-              titles.map((t) {
-                final sel = t == selectedTitle;
-                return Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: ChoiceChip(
-                    label: Text(t),
-                    selected: sel,
-                    onSelected: (_) => onTapTitle(t),
-                    materialTapTargetSize: MaterialTapTargetSize.padded,
-                  ),
-                );
-              }).toList(),
-        ),
-      ),
-    );
-  }
+  _SuggestedCategory.hardcoded(
+    this.name, {
+    required this.goals,
+    required List<Phrase> phrases,
+    required List<Vocab> vocab,
+    required this.tasks,
+    required this.prompt,
+  }) : order = 99,
+       id = name.toLowerCase().replaceAll(' ', '_'),
+       phrases = List.unmodifiable(phrases),
+       vocab = List.unmodifiable(vocab);
 }
 
 // ===== Section UI =====

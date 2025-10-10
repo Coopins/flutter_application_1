@@ -1,3 +1,4 @@
+// lib/screens/fluency_assessment_screen.dart
 import 'dart:async';
 import 'dart:io';
 
@@ -6,16 +7,13 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:record/record.dart';
-import 'package:permission_handler/permission_handler.dart';
 
 import '../routes.dart';
 import '../services/stt_service.dart';
+import '../services/transcription_service.dart';
 import '../services/lesson_plan_service.dart';
 
 class FluencyAssessmentScreen extends StatefulWidget {
-  /// Pass a language CODE: 'es','ru','pt','ja','ko','ro','fr' (or 'en').
   final String targetLanguage;
 
   const FluencyAssessmentScreen({super.key, this.targetLanguage = 'en'});
@@ -26,15 +24,14 @@ class FluencyAssessmentScreen extends StatefulWidget {
 }
 
 class _FluencyAssessmentScreenState extends State<FluencyAssessmentScreen> {
-  final AudioRecorder _recorder = AudioRecorder();
   final FlutterTts _tts = FlutterTts();
+  final SttService _stt = SttService();
 
   bool _isRecording = false;
   bool _isProcessing = false;
   String _status = 'Preparing…';
   String? _recordingPath;
 
-  // Hard cap so recording can't run forever if user forgets to stop.
   Timer? _hardStopTimer;
   static const int _maxRecordSeconds = 90;
 
@@ -48,32 +45,29 @@ class _FluencyAssessmentScreenState extends State<FluencyAssessmentScreen> {
   void dispose() {
     _hardStopTimer?.cancel();
     _tts.stop();
+    _stt.dispose();
     super.dispose();
   }
 
-  // Intro (EN) -> Question (target language) -> Auto-start recording (mic ONLY stops).
   Future<void> _runIntroThenListen() async {
     try {
       setState(() => _status = 'Getting ready…');
 
       await _tts.awaitSpeakCompletion(true);
 
-      // English intro
       await _tts.setLanguage('en-US');
-      await _tts.setSpeechRate(0.47);
+      await _tts.setSpeechRate(0.38);
       await _tts.setPitch(1.0);
       await _tts.speak("Let's get started. I’ll ask you a quick question.");
 
-      // Target-language question
       final ttsLocale = _localeFor(widget.targetLanguage);
       final question = _starterQuestion(widget.targetLanguage);
       await _tts.setLanguage(ttsLocale);
+      await _tts.setSpeechRate(0.36);
       await _tts.speak(question);
 
-      // ✅ NEW: tiny delay so the OS releases the TTS audio session cleanly
       await Future.delayed(const Duration(milliseconds: 250));
 
-      // Auto-start recording (tap mic ONLY to stop)
       await _startRecording();
       setState(() => _status = 'Listening… Tap the mic to stop.');
     } catch (e) {
@@ -81,80 +75,17 @@ class _FluencyAssessmentScreenState extends State<FluencyAssessmentScreen> {
     }
   }
 
-  // --- Preflight helpers -----------------------------------------------------
-
-  Future<bool> _ensureMicPermission() async {
-    final status = await Permission.microphone.status;
-    if (status.isGranted) return true;
-
-    final req = await Permission.microphone.request();
-    if (req.isGranted) return true;
-
-    if (!mounted) return false;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: const Text('Microphone permission is required.'),
-        action: SnackBarAction(
-          label: 'Open Settings',
-          onPressed: openAppSettings,
-        ),
-      ),
-    );
-    return false;
-  }
-
-  Future<bool> _storageWritableProbe() async {
-    try {
-      final dir = await getApplicationDocumentsDirectory();
-      final test = File(
-        '${dir.path}/.__gab_probe_${DateTime.now().millisecondsSinceEpoch}',
-      );
-      await test.create(recursive: true);
-      await test.writeAsBytes(const []);
-      await test.delete();
-      return true;
-    } catch (e) {
-      if (!mounted) return false;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Storage unavailable: $e')));
-      setState(() => _status = 'Storage unavailable.');
-      return false;
-    }
-  }
-
-  // --- Recording -------------------------------------------------------------
-
   Future<void> _startRecording() async {
     try {
-      // Preflight: mic permission + writable storage
-      if (!await _ensureMicPermission()) return;
-      if (!await _storageWritableProbe()) return;
-
-      final dir = await getApplicationDocumentsDirectory();
-      final filePath =
-          '${dir.path}/recording_${DateTime.now().millisecondsSinceEpoch}.wav';
-
-      await _recorder.start(
-        const RecordConfig(
-          encoder: AudioEncoder.wav, // better for Whisper
-          sampleRate: 48000, // clean capture
-          numChannels: 1, // mono
-        ),
-        path: filePath,
-      );
-
-      // ✅ NEW: verify the recorder is actually running
-      final actuallyRecording = await _recorder.isRecording();
+      await _stt.start();
+      final actuallyRecording = await _stt.isRecording;
       if (!actuallyRecording) {
         setState(() => _status = 'Recorder did not start. Try again.');
         return;
       }
 
-      _recordingPath = filePath;
       setState(() => _isRecording = true);
 
-      // Hard-stop safety timer
       _hardStopTimer?.cancel();
       _hardStopTimer = Timer(const Duration(seconds: _maxRecordSeconds), () {
         if (_isRecording) {
@@ -179,20 +110,17 @@ class _FluencyAssessmentScreenState extends State<FluencyAssessmentScreen> {
     try {
       _hardStopTimer?.cancel();
 
-      final stoppedPath = await _recorder.stop();
+      final stoppedPath = await _stt.stop();
       _isRecording = false;
-      if (stoppedPath != null && stoppedPath.isNotEmpty) {
-        _recordingPath = stoppedPath;
-      }
+      _recordingPath =
+          (stoppedPath != null && stoppedPath.isNotEmpty) ? stoppedPath : null;
 
-      // ✅ NEW: basic file sanity check before processing
       if (_recordingPath == null || !File(_recordingPath!).existsSync()) {
         setState(() => _status = 'No audio captured.');
         return;
       }
       final bytes = await File(_recordingPath!).length();
       if (bytes < 6000) {
-        // ~few hundred ms — avoids empty/accidental taps
         setState(() => _status = 'Very short recording. Please try again.');
         return;
       }
@@ -214,19 +142,12 @@ class _FluencyAssessmentScreenState extends State<FluencyAssessmentScreen> {
         throw Exception('Missing OPENAI_API_KEY');
       }
 
-      final stt = STTService(apiKey: apiKey);
-      final lp = LessonPlanService(apiKey: apiKey);
-
-      // 1) Transcribe with Whisper
-      final transcript = await stt.transcribe(
-        File(path),
-        // ✅ CHANGED: let Whisper auto-detect if your STTService supports null/''.
-        // Otherwise pass a simple 2-letter code like 'es' (not es-ES) for best results.
-        languageCode:
-            widget.targetLanguage.isEmpty ? null : widget.targetLanguage,
+      // 1) Transcribe
+      final transcript = await TranscriptionService.transcribeFile(
+        file: File(path),
+        language: widget.targetLanguage.isEmpty ? null : widget.targetLanguage,
       );
 
-      // ✅ NEW: Guard against empty/irrelevant transcript (prevents default/fallback plans)
       final cleaned = transcript.trim();
       debugPrint(
         '🎧 TRANSCRIPT (${cleaned.length} chars): ${cleaned.substring(0, cleaned.length.clamp(0, 160))}',
@@ -238,26 +159,26 @@ class _FluencyAssessmentScreenState extends State<FluencyAssessmentScreen> {
         return;
       }
 
-      // 2) Generate structured Markdown lesson plan (must use the transcript)
+      // 2) Generate lesson plan
+      final lp = LessonPlanService(apiKey: apiKey); // ✅ fixed
       final planMarkdown = await lp.generatePlan(
         transcript: cleaned,
         languageCode: widget.targetLanguage,
       );
 
-      // 3) Save to Firestore (include transcript for verification)
+      // 3) Save
       String? docId;
       try {
         docId = await _saveLessonPlan(
           planMarkdown,
           language: widget.targetLanguage,
           ttsLocale: _localeFor(widget.targetLanguage),
-          transcript: cleaned, // ✅ NEW
+          transcript: cleaned,
         );
       } catch (e) {
         debugPrint('⚠️ Save failed (non-blocking): $e');
       }
 
-      // 4) Navigate to Lesson Plan screen
       if (!mounted) return;
       Navigator.of(
         context,
@@ -275,20 +196,19 @@ class _FluencyAssessmentScreenState extends State<FluencyAssessmentScreen> {
     String markdown, {
     required String language,
     required String ttsLocale,
-    String? transcript, // ✅ NEW
+    String? transcript,
   }) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return null;
     final now = FieldValue.serverTimestamp();
     final data = <String, dynamic>{
-      'language': language, // 'es','ru','pt','ja','ko','ro','fr'
+      'language': language,
       'markdown': markdown,
       'ttsLocale': ttsLocale,
       'createdAt': now,
       'updatedAt': now,
-      // ✅ NEW: store for proof/QA
       if (transcript != null && transcript.isNotEmpty) 'transcript': transcript,
-      'source': 'speech', // ✅ NEW: lightweight provenance
+      'source': 'speech',
     };
     final ref = await FirebaseFirestore.instance
         .collection('users')
@@ -300,7 +220,6 @@ class _FluencyAssessmentScreenState extends State<FluencyAssessmentScreen> {
     return ref.id;
   }
 
-  // ------- Helpers for the 7 languages -------
   String _localeFor(String s) {
     final v = s.toLowerCase().trim();
     if (v == 'es' || v == 'spanish') return 'es-ES';
